@@ -385,7 +385,7 @@
 </head>
 <body>
   <header>
-    <h1>🍳 Mein digitales Kochbuch</h1>
+    <h1>🍳 Andy´s Genussreise </h1>
     <p>Rezepte verwalten, Nährwerte automatisch berechnen und als Dashboard nutzen.</p>
   </header>
 
@@ -685,7 +685,7 @@
       return window.NUTRIENT_DATA?.note || "Durchschnittswerte pro 100 g/ml.";
     }
 
-    function createRecipe() {
+    function calculateIngredientNutrients(ingredient) {
       const key = ingredient.nutrientKey || findNutrientKey(ingredient.name);
       const base = nutrientLibrary[key] || null;
       const amount = Number(ingredient.amount) || 0;
