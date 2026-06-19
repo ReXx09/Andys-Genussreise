@@ -245,18 +245,24 @@
     }
 
     .nutrition-card {
+      grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: repeat(5, minmax(110px, 1fr));
-      gap: 8px;
-      padding: 10px;
+      gap: 10px;
+      padding: 12px;
       border: 1px solid var(--border);
       border-radius: 14px;
       background: #fffaf4;
     }
 
+    .nutrition-meta {
+      display: grid;
+      grid-template-columns: 180px minmax(220px, 1fr);
+      gap: 10px;
+    }
+
     .nutrition-card label {
       display: grid;
-      gap: 4px;
+      gap: 5px;
       font-size: 12px;
       font-weight: 600;
     }
@@ -264,27 +270,26 @@
     .nutrition-card input,
     .nutrition-card select {
       width: 100%;
-      padding: 7px 9px;
+      padding: 8px 10px;
       font-size: 13px;
     }
 
     .inline-nutrition-row {
-      grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: repeat(5, minmax(110px, 1fr));
-      gap: 8px;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 10px;
     }
 
     .inline-nutrition-row label {
       display: grid;
-      gap: 4px;
+      gap: 5px;
       font-size: 12px;
       font-weight: 600;
     }
 
     .inline-nutrition-row input {
       width: 100%;
-      padding: 7px 9px;
+      padding: 8px 10px;
       font-size: 13px;
     }
 
