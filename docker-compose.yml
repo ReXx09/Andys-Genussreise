@@ -1,0 +1,10 @@
+services:
+  kochbuch:
+    image: python:3.12-alpine
+    container_name: kochbuch-dashboard
+    restart: unless-stopped
+    command: python -m http.server 8080 --directory /app
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/app:ro
