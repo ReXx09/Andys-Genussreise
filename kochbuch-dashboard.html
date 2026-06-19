@@ -244,9 +244,31 @@
       min-width: 0;
     }
 
-    .nutrition-card {
+    .nutrition-meta {
+      display: grid;
+      grid-template-columns: 180px minmax(220px, 1fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .nutrition-meta label {
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .nutrition-meta input,
+    .nutrition-meta select {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .nutrition-values {
       grid-column: 1 / -1;
       display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
       gap: 10px;
       padding: 12px;
       border: 1px solid var(--border);
@@ -254,40 +276,14 @@
       background: #fffaf4;
     }
 
-    .nutrition-meta {
-      display: grid;
-      grid-template-columns: 180px minmax(220px, 1fr);
-      gap: 10px;
-    }
-
-    .nutrition-card label {
+    .nutrition-values label {
       display: grid;
       gap: 5px;
       font-size: 12px;
       font-weight: 600;
     }
 
-    .nutrition-card input,
-    .nutrition-card select {
-      width: 100%;
-      padding: 8px 10px;
-      font-size: 13px;
-    }
-
-    .inline-nutrition-row {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(140px, 1fr));
-      gap: 10px;
-    }
-
-    .inline-nutrition-row label {
-      display: grid;
-      gap: 5px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .inline-nutrition-row input {
+    .nutrition-values input {
       width: 100%;
       padding: 8px 10px;
       font-size: 13px;
@@ -1032,7 +1028,7 @@
           </td>
           <td>
             <div class="muted">kcal / P / K / F pro 100 g/ml</div>
-            <div class="nutrition-card">
+            <div class="nutrition-meta">
               <label>
                 Modus
                 <select data-ingredient="${index}" data-field="nutritionMode">
@@ -1044,24 +1040,24 @@
                 Nährwert
                 <input data-ingredient="${index}" data-field="nutrientKey" value="${escapeAttr(ingredient.nutrientKey)}" placeholder="automatisch" ${baseValues ? "readonly" : ""} />
               </label>
-              <div class="inline-nutrition-row">
-                <label>
-                  kcal
-                  <input data-ingredient="${index}" data-field="kcal" type="number" min="0" step="1" value="${escapeAttr(baseValues ? baseValues.kcal : ingredient.kcal)}" placeholder="kcal" />
-                </label>
-                <label>
-                  Eiweiß
-                  <input data-ingredient="${index}" data-field="protein" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.protein : ingredient.protein)}" placeholder="P" />
-                </label>
-                <label>
-                  Kohlenh.
-                  <input data-ingredient="${index}" data-field="carbs" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.carbs : ingredient.carbs)}" placeholder="K" />
-                </label>
-                <label>
-                  Fett
-                  <input data-ingredient="${index}" data-field="fat" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.fat : ingredient.fat)}" placeholder="F" />
-                </label>
-              </div>
+            </div>
+            <div class="nutrition-values">
+              <label>
+                kcal
+                <input data-ingredient="${index}" data-field="kcal" type="number" min="0" step="1" value="${escapeAttr(baseValues ? baseValues.kcal : ingredient.kcal)}" placeholder="kcal" />
+              </label>
+              <label>
+                Eiweiß
+                <input data-ingredient="${index}" data-field="protein" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.protein : ingredient.protein)}" placeholder="P" />
+              </label>
+              <label>
+                Kohlenh.
+                <input data-ingredient="${index}" data-field="carbs" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.carbs : ingredient.carbs)}" placeholder="K" />
+              </label>
+              <label>
+                Fett
+                <input data-ingredient="${index}" data-field="fat" type="number" min="0" step="0.1" value="${escapeAttr(baseValues ? baseValues.fat : ingredient.fat)}" placeholder="F" />
+              </label>
             </div>
           </td>
           <td><strong>${formatNumber(nutrients.kcal)}</strong></td>
