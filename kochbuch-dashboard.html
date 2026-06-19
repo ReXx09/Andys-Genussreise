@@ -96,6 +96,16 @@
       font-size: 0.7rem;
       margin-left: 4px;
     }
+    .nav-bar .refresh-feedback {
+      font-size: 0.8rem;
+      color: var(--green);
+      margin-left: 4px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .nav-bar .refresh-feedback.show {
+      opacity: 1;
+    }
 
     /* ===== Main ===== */
     main {
@@ -563,6 +573,7 @@
   <a href="#" class="active" data-view="recipes">📖 Rezepte</a>
   <a href="#" data-view="nutrients">📊 Nährwerte verwalten</a>
   <span class="spacer"></span>
+  <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
   <button id="exportNavBtn" class="ghost">⬇️ Export</button>
   <label class="button-link ghost" for="importNavFile">⬆️ Import
     <input id="importNavFile" type="file" accept=".json,application/json" class="hidden" />
@@ -724,7 +735,6 @@
     let folders = loadFolders();
     folders = folders.filter(f => f.id !== id);
     saveFolders(folders);
-    // Rezepte aus diesem Ordner entfernen (in "Kein Ordner" schieben)
     state.recipes.forEach(r => {
       if (r.folderId === id) r.folderId = null;
     });
@@ -761,7 +771,7 @@
     selectedId: null,
     search: "",
     view: "recipes",
-    selectedFolderId: null // null = Alle Rezepte, "none" = Kein Ordner
+    selectedFolderId: null
   };
 
   const els = {
@@ -795,7 +805,9 @@
     folderManageList: document.getElementById("folderManageList"),
     addFolderForm: document.getElementById("addFolderForm"),
     newFolderName: document.getElementById("newFolderName"),
-    folderFeedback: document.getElementById("folderFeedback")
+    folderFeedback: document.getElementById("folderFeedback"),
+    refreshBtn: document.getElementById("refreshBtn"),
+    refreshFeedback: document.getElementById("refreshFeedback")
   };
 
   function uid() { return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8); }
@@ -915,7 +927,7 @@
       if (saved && Array.isArray(saved.recipes)) {
         state.recipes = saved.recipes;
         state.selectedId = saved.selectedId || state.recipes[0]?.id || null;
-        state.selectedFolderId = saved.selectedFolderId || null;
+        state.selectedFolderId = saved.selectedFolderId !== undefined ? saved.selectedFolderId : null;
       } else {
         state.recipes = [];
         state.selectedId = null;
@@ -1008,10 +1020,8 @@
     });
     els.folderList.innerHTML = html;
 
-    // Klick auf Ordner -> filtern
     els.folderList.querySelectorAll('.folder-item[data-folder-id]').forEach(el => {
       el.addEventListener('click', (e) => {
-        // Wenn auf einen Button geklickt wurde, nicht auslösen
         if (e.target.closest('button')) return;
         const id = el.dataset.folderId;
         state.selectedFolderId = id === 'null' ? null : id === 'none' ? 'none' : id;
@@ -1020,7 +1030,6 @@
       });
     });
 
-    // Rename / Delete
     els.folderList.querySelectorAll('[data-rename-folder]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1032,7 +1041,7 @@
         if (newName && newName.trim()) {
           renameFolder(id, newName.trim());
           renderFolderList();
-          renderRecipeList(); // ggf. Ordner-Namen in Rezepten aktualisieren
+          renderRecipeList();
         }
       });
     });
@@ -1056,14 +1065,12 @@
     const search = state.search.toLowerCase();
     let filtered = state.recipes;
 
-    // Ordnerfilter
     if (state.selectedFolderId === 'none') {
       filtered = filtered.filter(r => !r.folderId);
     } else if (state.selectedFolderId !== null) {
       filtered = filtered.filter(r => r.folderId === state.selectedFolderId);
     }
 
-    // Suche
     filtered = filtered.filter(r => !search ||
       r.name.toLowerCase().includes(search) ||
       r.tags.toLowerCase().includes(search) ||
@@ -1093,7 +1100,6 @@
         state.selectedId = card.dataset.id;
         save();
         renderEditor();
-        // Aktive Markierung aktualisieren
         document.querySelectorAll('.recipe-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
       });
@@ -1120,7 +1126,6 @@
     const ingredientRows = recipe.ingredients.map((ingredient, index) => renderIngredientRow(recipe, ingredient, index)).join("");
     const stepRows = recipe.steps.map((step, index) => renderStepRow(recipe, step, index)).join("");
 
-    // Dropdown für Ordnerauswahl
     const folders = loadFolders();
     let folderOptions = `<option value="">Kein Ordner</option>`;
     folders.forEach(f => {
@@ -1259,10 +1264,11 @@
   }
 
   // ============================================================
-  //  7.  EVENT-BINDING
+  //  7.  EVENT-BINDING (fix: Metadaten-Listener nur ohne data-ingredient/-step)
   // ============================================================
   function bindEditorEvents(recipe) {
-    els.editor.querySelectorAll("[data-field]").forEach(input => {
+    // Nur Metadaten-Felder: Kein data-ingredient und kein data-step
+    els.editor.querySelectorAll('[data-field]:not([data-ingredient]):not([data-step])').forEach(input => {
       input.addEventListener("input", () => {
         const field = input.dataset.field;
         if (field === "folderId") {
@@ -1274,13 +1280,14 @@
         save();
         if (["name","category","tags","folderId"].includes(field)) {
           renderRecipeList();
-          renderFolderList(); // Aktualisiert die Zähler
+          renderFolderList();
         }
         if (["portions","difficulty","prepTime","cookingTime"].includes(field)) updatePrintArea(recipe);
       });
     });
 
-    els.editor.querySelectorAll("[data-ingredient]").forEach(input => {
+    // Zutaten-Felder (haben data-ingredient)
+    els.editor.querySelectorAll('[data-ingredient]').forEach(input => {
       input.addEventListener("input", () => {
         const index = Number(input.dataset.ingredient);
         const field = input.dataset.field;
@@ -1335,7 +1342,8 @@
       });
     });
 
-    els.editor.querySelectorAll("[data-step]").forEach(textarea => {
+    // Schritt-Felder (haben data-step)
+    els.editor.querySelectorAll('[data-step]').forEach(textarea => {
       textarea.addEventListener("input", () => {
         recipe.steps[Number(textarea.dataset.step)] = textarea.value;
         save();
@@ -1343,7 +1351,8 @@
       });
     });
 
-    els.editor.querySelectorAll("[data-remove-ingredient]").forEach(button => {
+    // Lösch-Buttons
+    els.editor.querySelectorAll('[data-remove-ingredient]').forEach(button => {
       button.addEventListener("click", () => {
         recipe.ingredients.splice(Number(button.dataset.removeIngredient), 1);
         if (recipe.ingredients.length === 0) recipe.ingredients.push(createIngredient());
@@ -1352,7 +1361,7 @@
       });
     });
 
-    els.editor.querySelectorAll("[data-remove-step]").forEach(button => {
+    els.editor.querySelectorAll('[data-remove-step]').forEach(button => {
       button.addEventListener("click", () => {
         recipe.steps.splice(Number(button.dataset.removeStep), 1);
         if (recipe.steps.length === 0) recipe.steps.push("");
@@ -1502,7 +1511,7 @@
         saveUserNutrients(user);
         refreshLibrary();
         renderNutrientList();
-        renderEditor(); // Editor neu rendern, da sich die Library geändert hat
+        renderEditor();
       });
     });
   }
@@ -1665,14 +1674,12 @@
           recipe.id = recipe.id || uid();
           recipe.ingredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
           recipe.steps = Array.isArray(recipe.steps) ? recipe.steps : [];
-          // folderId existiert ggf. nicht -> null
           if (!recipe.hasOwnProperty('folderId')) recipe.folderId = null;
         });
         state.recipes = recipes;
         state.selectedId = state.recipes[0]?.id || null;
         state.selectedFolderId = null;
 
-        // Ordner importieren
         if (data.folders && Array.isArray(data.folders)) {
           saveFolders(data.folders);
         }
@@ -1691,7 +1698,24 @@
   }
 
   // ============================================================
-  //  12. NAVIGATION / VIEWS
+  //  12. AKTUALISIEREN (Refresh)
+  // ============================================================
+  function refreshData() {
+    refreshLibrary();
+    loadRecipes();
+    if (state.view === "nutrients") {
+      switchView("nutrients");
+    } else {
+      render();
+    }
+    els.refreshFeedback.classList.add('show');
+    setTimeout(() => {
+      els.refreshFeedback.classList.remove('show');
+    }, 2500);
+  }
+
+  // ============================================================
+  //  13. NAVIGATION / VIEWS
   // ============================================================
   function switchView(view) {
     state.view = view;
@@ -1717,7 +1741,7 @@
   }
 
   // ============================================================
-  //  13. HAUPT-RENDER & EVENT-LISTENER
+  //  14. HAUPT-RENDER & EVENT-LISTENER
   // ============================================================
   function render() {
     if (state.view === "recipes") {
@@ -1750,6 +1774,9 @@
   });
   els.printNavBtn.addEventListener("click", () => window.print());
 
+  // Refresh-Button
+  els.refreshBtn.addEventListener("click", refreshData);
+
   // Modal schließen (Nährstoffe)
   els.closeNutrientModal.addEventListener("click", closeNutrientModal);
   els.nutrientModal.addEventListener("click", (e) => {
@@ -1769,7 +1796,7 @@
   });
 
   // ============================================================
-  //  14. START
+  //  15. START
   // ============================================================
   loadRecipes();
   switchView("recipes");
