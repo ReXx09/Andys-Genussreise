@@ -129,7 +129,7 @@
     }
 
     input.short {
-      width: 110px;
+      width: 86px;
     }
 
     input.medium {
@@ -161,6 +161,7 @@
       border-radius: var(--radius);
       padding: 18px;
       box-shadow: var(--shadow);
+      overflow-x: auto;
     }
 
     .panel h2, .panel h3 {
@@ -225,21 +226,46 @@
 
     table {
       width: 100%;
+      min-width: 900px;
       border-collapse: collapse;
       overflow: hidden;
       border-radius: 14px;
       background: white;
+      font-size: 14px;
+    }
+
+    .nutrition-table {
+      min-width: 0;
     }
 
     th, td {
       border-bottom: 1px solid var(--border);
-      padding: 10px;
-      vertical-align: top;
+      padding: 8px;
+      vertical-align: middle;
     }
 
     th {
       background: #fff3e0;
       text-align: left;
+      font-size: 13px;
+    }
+
+    td input,
+    td textarea,
+    td select {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    td textarea {
+      min-height: 62px;
+    }
+
+    .nutrition-inputs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(72px, 1fr));
+      gap: 6px;
+      margin-top: 6px;
     }
 
     tr:last-child td {
@@ -882,7 +908,7 @@
           </div>
 
           <h2>Zutaten und Nährwerte</h2>
-          <table>
+          <table class="nutrition-table">
             <thead>
               <tr>
                 <th style="width: 24%;">Zutat</th>
