@@ -1,0 +1,5 @@
+node_modules
+database-data
+.git
+.gitignore
+*.md

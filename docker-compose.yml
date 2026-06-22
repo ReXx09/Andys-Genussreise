@@ -11,6 +11,10 @@ services:
       - PORT=3000
       - DB_PATH=/data/database.sqlite
     volumes:
-      - ./database-data:/data
+      - kochbuch-data:/data
       - ./:/app:ro
+      - /app/server/node_modules
     working_dir: /app/server
+
+volumes:
+  kochbuch-data:
