@@ -1,8 +1,6 @@
 services:
   kochbuch:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/rexx09/andys-genussreise:latest
     container_name: kochbuch-dashboard
     restart: unless-stopped
     ports:
@@ -12,7 +10,6 @@ services:
       - DB_PATH=/data/database.sqlite
     volumes:
       - kochbuch-data:/data
-      - ./:/app:ro
       - /app/server/node_modules
     working_dir: /app/server
 
