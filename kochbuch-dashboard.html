@@ -275,7 +275,7 @@
       display: grid;
       grid-template-columns: 340px 1fr;
       gap: 24px;
-      align-items: start;
+      align-items: stretch;
       height: 100%;
       min-height: 0;
     }
@@ -299,9 +299,11 @@
 
     #recipeListPanel {
       height: 100%;
+      align-self: stretch;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     #mainPanel {
@@ -558,9 +560,9 @@
       flex-direction: column;
       gap: 12px;
       max-height: none;
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
+      flex: unset;
+      min-height: auto;
+      overflow: visible;
       padding: 6px 10px 14px 2px;
       margin-top: 8px;
     }
@@ -979,13 +981,14 @@
         height: auto;
         display: block;
       }
+      #recipeListPanel {
+        max-height: 58vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       #editor {
         overflow: visible;
         padding-right: 0;
-      }
-      .recipe-list {
-        max-height: 50vh;
-        flex: unset;
       }
       .mobile-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .recipe-card .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1292,7 +1295,7 @@
   }
 
   function getFolderName(id) {
-    if (!id) return "Kein Ordner";
+    if (!id) return "";
     const folders = loadFolders();
     const f = folders.find(f => f.id === id);
     return f ? f.name : "Unbekannt";
@@ -1306,6 +1309,7 @@
   //  3.  STATE & HILFSFUNKTIONEN
   // ============================================================
   const STORAGE_KEY = "digitales-kochbuch-v1";
+  const PENDING_RECIPE_SYNC_KEY = "digitales-kochbuch-pending-recipe-sync";
   const API_BASE = "/api";
 
   let backendMode = false;
@@ -1432,8 +1436,7 @@
     els.mobileCookModeBtn = document.getElementById("mobileCookModeBtn");
 
     els.mobileNewRecipeBtn?.addEventListener("click", () => {
-      const folderId = state.selectedFolderId === 'none' ? null : state.selectedFolderId;
-      createRecipe(folderId);
+      createRecipe(state.selectedFolderId);
       showToast("Neues Rezept angelegt.");
     });
     els.mobileAddIngredientBtn?.addEventListener("click", () => {
@@ -1509,6 +1512,14 @@
     }));
   }
 
+  function setPendingRecipeSync(flag) {
+    localStorage.setItem(PENDING_RECIPE_SYNC_KEY, flag ? "1" : "0");
+  }
+
+  function hasPendingRecipeSync() {
+    return localStorage.getItem(PENDING_RECIPE_SYNC_KEY) === "1";
+  }
+
   async function syncAllRecipesToApi() {
     await apiRequest('/recipes/reset', { method: 'POST' });
     for (const recipe of state.recipes) {
@@ -1517,6 +1528,7 @@
         body: JSON.stringify(recipe)
       });
     }
+    setPendingRecipeSync(false);
   }
 
   async function loadUserNutrientsFromApi() {
@@ -1616,6 +1628,47 @@
     return Number(value || 0).toLocaleString("de-DE", { maximumFractionDigits: 1 });
   }
   function normalizeText(value) { return String(value || "").trim(); }
+
+  function normalizeForSearch(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replaceAll("ä", "ae")
+      .replaceAll("ö", "oe")
+      .replaceAll("ü", "ue")
+      .replaceAll("ß", "ss")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function recipeMatchesSearch(recipe, rawQuery) {
+    const query = normalizeForSearch(rawQuery);
+    if (!query) return true;
+
+    const ingredientText = (recipe.ingredients || [])
+      .map((ingredient) => [
+        ingredient?.name,
+        ingredient?.nutrientKey,
+        ingredient?.unit,
+        ingredient?.amount
+      ].join(" "))
+      .join(" ");
+
+    const stepsText = (recipe.steps || []).join(" ");
+
+    const haystack = [
+      recipe.name,
+      recipe.tags,
+      recipe.category,
+      recipe.difficulty,
+      getFolderName(recipe.folderId),
+      ingredientText,
+      stepsText
+    ].map(normalizeForSearch).join(" ");
+
+    return haystack.includes(query);
+  }
 
   function buildIngredientSuggestions() {
     const byKey = Object.keys(nutrientLibrary || {});
@@ -1843,9 +1896,29 @@
           console.warn("Nährwertdaten konnten nicht vom Server geladen werden:", error);
         }
         refreshLibrary();
-        state.recipes = remoteRecipes.map(normalizeRecipeForState);
-        state.selectedId = state.recipes[0]?.id || null;
-        state.selectedFolderId = null;
+        const localSnapshot = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+        const hasLocalSnapshot = localSnapshot && Array.isArray(localSnapshot.recipes);
+
+        if (hasPendingRecipeSync() && hasLocalSnapshot) {
+          state.recipes = localSnapshot.recipes.map(normalizeRecipeForState);
+          state.selectedId = localSnapshot.selectedId || state.recipes[0]?.id || null;
+          state.selectedFolderId = localSnapshot.selectedFolderId !== undefined ? localSnapshot.selectedFolderId : null;
+          if (state.selectedFolderId === 'none') state.selectedFolderId = null;
+
+          syncQueue = syncQueue
+            .then(() => syncAllRecipesToApi())
+            .catch((error) => {
+              console.warn("Backend-Sync beim Start fehlgeschlagen:", error);
+              backendMode = false;
+              els.refreshFeedback.textContent = "⚠️ Offline-Modus";
+              els.refreshFeedback.classList.add('show');
+            });
+        } else {
+          state.recipes = remoteRecipes.map(normalizeRecipeForState);
+          state.selectedId = state.recipes[0]?.id || null;
+          state.selectedFolderId = null;
+        }
+
         if (state.recipes.length === 0) createRecipe();
         writeLocalState();
         render();
@@ -1861,6 +1934,7 @@
         state.recipes = saved.recipes.map(normalizeRecipeForState);
         state.selectedId = saved.selectedId || state.recipes[0]?.id || null;
         state.selectedFolderId = saved.selectedFolderId !== undefined ? saved.selectedFolderId : null;
+        if (state.selectedFolderId === 'none') state.selectedFolderId = null;
       } else {
         state.recipes = [];
         state.selectedId = null;
@@ -1878,6 +1952,7 @@
 
   function save() {
     writeLocalState();
+    setPendingRecipeSync(true);
     scheduleBackendSync();
   }
 
@@ -1932,9 +2007,6 @@
       <div class="folder-item ${state.selectedFolderId === null ? 'active' : ''}" data-folder-id="null">
         <span class="folder-name">📂 Alle Rezepte <span class="folder-count">${state.recipes.length}</span></span>
       </div>
-      <div class="folder-item ${state.selectedFolderId === 'none' ? 'active' : ''}" data-folder-id="none">
-        <span class="folder-name">📁 Kein Ordner <span class="folder-count">${state.recipes.filter(r => !r.folderId).length}</span></span>
-      </div>
     `;
     folders.forEach(folder => {
       const count = state.recipes.filter(r => r.folderId === folder.id).length;
@@ -1955,8 +2027,9 @@
       el.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
         const id = el.dataset.folderId;
-        state.selectedFolderId = id === 'null' ? null : id === 'none' ? 'none' : id;
+        state.selectedFolderId = id === 'null' ? null : id;
         save();
+        renderFolderList();
         renderRecipeList();
       });
     });
@@ -1984,7 +2057,7 @@
         const folders = loadFolders();
         const folder = folders.find(f => f.id === id);
         if (!folder) return;
-        const ok = await confirmAction(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten (verschoben in "Kein Ordner").`);
+        const ok = await confirmAction(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten und erscheinen danach unter "Alle Rezepte".`);
         if (!ok) return;
         deleteFolder(id);
         renderFolderList();
@@ -1995,32 +2068,35 @@
   }
 
   function renderRecipeList() {
-    const search = state.search.toLowerCase();
     let filtered = state.recipes;
 
-    if (state.selectedFolderId === 'none') {
-      filtered = filtered.filter(r => !r.folderId);
-    } else if (state.selectedFolderId !== null) {
+    if (state.selectedFolderId !== null) {
       filtered = filtered.filter(r => r.folderId === state.selectedFolderId);
     }
 
-    filtered = filtered.filter(r => !search ||
-      r.name.toLowerCase().includes(search) ||
-      r.tags.toLowerCase().includes(search) ||
-      r.category.toLowerCase().includes(search));
+    filtered = filtered.filter(r => recipeMatchesSearch(r, state.search));
 
     filtered = filtered.filter(recipeMatchesFilter);
 
     filtered.sort((a, b) => a.name.localeCompare(b.name, "de"));
 
+    const selectedIsVisible = filtered.some(recipe => recipe.id === state.selectedId);
+    if (!selectedIsVisible) {
+      state.selectedId = filtered[0]?.id || null;
+      save();
+      renderEditor();
+    }
+
     if (filtered.length === 0) {
       els.recipeList.innerHTML = `<div class="empty">Keine Rezepte in dieser Ansicht.</div>`;
+      renderEditor();
       return;
     }
 
     els.recipeList.innerHTML = filtered.map(recipe => {
       const p = perPortion(recipe);
       const folderName = getFolderName(recipe.folderId);
+      const folderTag = folderName ? `<span class="folder-tag">${escapeHtml(folderName)}</span>` : "";
       const totalMinutes = parseMinutes(recipe.prepTime) + parseMinutes(recipe.cookingTime);
       return `
         <div class="recipe-card ${recipe.id === state.selectedId ? "active" : ""}" data-id="${recipe.id}">
@@ -2028,7 +2104,7 @@
             <strong>${escapeHtml(recipe.name || "Unbenannt")}</strong>
             <button class="favorite-btn ${recipe.favorite ? "active" : ""}" data-fav-id="${recipe.id}" aria-label="Favorit umschalten">${recipe.favorite ? "★" : "☆"}</button>
           </div>
-          <div class="muted">${escapeHtml(recipe.category || "Kategorie")} · ${Number(recipe.portions) || 1} Port. <span class="folder-tag">${escapeHtml(folderName)}</span></div>
+          <div class="muted">${escapeHtml(recipe.category || "Kategorie")} · ${Number(recipe.portions) || 1} Port. ${folderTag}</div>
           <div class="meta-grid">
             <span class="meta-pill">⏱ ${totalMinutes || "-"} Min</span>
             <span class="meta-pill">🎯 ${escapeHtml(recipe.difficulty || "mittel")}</span>
@@ -2072,7 +2148,7 @@
           <button id="editorEmptyNewBtn">➕ Rezept anlegen</button>
         </div>
       `;
-      document.getElementById("editorEmptyNewBtn")?.addEventListener("click", () => createRecipe(state.selectedFolderId === 'none' ? null : state.selectedFolderId));
+      document.getElementById("editorEmptyNewBtn")?.addEventListener("click", () => createRecipe(state.selectedFolderId));
       return;
     }
 
@@ -2082,7 +2158,7 @@
     const stepRows = recipe.steps.map((step, index) => renderStepRow(recipe, step, index)).join("");
 
     const folders = loadFolders();
-    let folderOptions = `<option value="">Kein Ordner</option>`;
+    let folderOptions = `<option value="">Ohne Zuordnung</option>`;
     folders.forEach(f => {
       folderOptions += `<option value="${f.id}" ${recipe.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`;
     });
@@ -2402,7 +2478,7 @@
         <h1>${escapeHtml(recipe.name)}</h1>
         <p><strong>Kategorie:</strong> ${escapeHtml(recipe.category)} · <strong>Schwierigkeit:</strong> ${escapeHtml(recipe.difficulty)} · <strong>Portionen:</strong> ${Number(recipe.portions) || 1}</p>
         <p><strong>Zeit:</strong> ${escapeHtml(recipe.prepTime)} ${recipe.cookingTime ? " · " + escapeHtml(recipe.cookingTime) : ""}</p>
-        <p><strong>Ordner:</strong> ${escapeHtml(getFolderName(recipe.folderId))}</p>
+        ${recipe.folderId ? `<p><strong>Ordner:</strong> ${escapeHtml(getFolderName(recipe.folderId))}</p>` : ""}
         <h2>Nährwerte pro Portion</h2>
         ${trafficTable(portion)}
         <h2>Zutaten</h2>
@@ -3116,8 +3192,7 @@
 
   // Buttons
   els.newRecipeBtn.addEventListener("click", () => {
-    const folderId = state.selectedFolderId === 'none' ? null : state.selectedFolderId;
-    createRecipe(folderId);
+    createRecipe(state.selectedFolderId);
     showToast("Neues Rezept angelegt.");
   });
   els.newFolderBtn.addEventListener("click", openFolderModal);
