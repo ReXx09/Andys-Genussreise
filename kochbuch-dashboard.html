@@ -137,6 +137,35 @@
       align-items: center;
     }
 
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 4px;
+    }
+    .chip {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text-muted);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .chip:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .chip.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
     /* ===== Buttons ===== */
     button, .button-link {
       border: 0;
@@ -339,6 +368,50 @@
       font-size: 0.7rem;
       font-weight: 600;
       margin-left: 8px;
+    }
+    .recipe-card .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .recipe-card .meta-pill {
+      background: #f4ece4;
+      border: 1px solid #eadccc;
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-size: 0.74rem;
+      color: #4b3f33;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recipe-card .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .favorite-btn {
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-size: 0.9rem;
+      background: transparent;
+      color: #8d8274;
+      box-shadow: none;
+      border: 1px solid transparent;
+    }
+    .favorite-btn:hover {
+      transform: none;
+      box-shadow: none;
+      border-color: #e7d7c4;
+      background: #fff5ea;
+    }
+    .favorite-btn.active {
+      color: #f39c12;
+      border-color: #f7cb7a;
+      background: #fff2dc;
     }
 
     /* ===== Editor ===== */
@@ -548,6 +621,94 @@
     }
     .modal .close-btn:hover { color: var(--text); }
 
+    .toast-stack {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      display: grid;
+      gap: 8px;
+      z-index: 1600;
+      pointer-events: none;
+    }
+    .toast {
+      background: #1f2a1f;
+      color: #ecf8ec;
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+      min-width: 220px;
+      max-width: 360px;
+      font-size: 0.86rem;
+      border-left: 4px solid #2e7d32;
+      animation: toast-in 0.22s ease;
+    }
+    .toast.error {
+      background: #3a1f1f;
+      border-left-color: #c62828;
+      color: #ffe8e8;
+    }
+    .toast.info {
+      background: #1f2d3a;
+      border-left-color: #1565c0;
+      color: #e5f1ff;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .mobile-actions {
+      display: none;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1200;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border);
+      gap: 8px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .mobile-actions button {
+      border-radius: 12px;
+      padding: 10px 8px;
+      font-size: 0.78rem;
+      justify-content: center;
+    }
+
+    .cook-hero {
+      background: linear-gradient(140deg, #fff8ec, #fff3e3);
+      border: 1px solid #efd8bd;
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .cook-step {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+      margin-bottom: 10px;
+      min-height: 90px;
+    }
+    .cook-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .cook-controls button {
+      flex: 1;
+      justify-content: center;
+    }
+
+    @media (max-width: 880px) {
+      main { padding-bottom: 90px; }
+      .mobile-actions { display: grid; }
+      .recipe-card .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
     /* ===== Druck ===== */
     .print-area { display: none; }
     @media print {
@@ -601,6 +762,13 @@
   <section class="grid">
     <aside class="panel no-print" id="recipeListPanel">
       <h2>📖 Rezepte</h2>
+      <div class="filter-chips" id="filterChips">
+        <button class="chip active" data-filter="all">Alle</button>
+        <button class="chip" data-filter="favorites">Favoriten</button>
+        <button class="chip" data-filter="leicht">Leicht</button>
+        <button class="chip" data-filter="mittel">Mittel</button>
+        <button class="chip" data-filter="schwer">Schwer</button>
+      </div>
       <!-- Ordnerliste -->
       <div id="folderList" class="folder-list"></div>
       <!-- Rezeptliste -->
@@ -657,7 +825,50 @@
       <p id="folderFeedback" class="muted"></p>
     </div>
   </div>
+
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+      <h2 id="confirmModalTitle">Bitte bestätigen</h2>
+      <p id="confirmModalMessage">Soll diese Aktion ausgeführt werden?</p>
+      <div class="toolbar" style="margin-top: 14px; padding: 0; border: 0; box-shadow: none; background: transparent;">
+        <div class="toolbar-left">
+          <button id="confirmCancelBtn" class="secondary">Abbrechen</button>
+          <button id="confirmOkBtn" class="danger">Bestätigen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="cookModeModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cookModeTitle" style="max-width: min(92vw, 720px);">
+      <button class="close-btn" id="closeCookModeModal" aria-label="Kochmodus schließen">✕</button>
+      <h2 id="cookModeTitle">🍽️ Kochmodus</h2>
+      <div id="cookModeContent"></div>
+    </div>
+  </div>
 </main>
+
+<div class="mobile-actions no-print" id="mobileActions">
+  <button id="mobileNewRecipeBtn">➕ Neu</button>
+  <button id="mobileAddIngredientBtn">🥕 Zutat</button>
+  <button id="mobileAddStepBtn">📋 Schritt</button>
+  <button id="mobileCookModeBtn">🍽️ Kochen</button>
+</div>
+
+<div id="toastStack" class="toast-stack" aria-live="polite"></div>
+<datalist id="ingredientSuggestions"></datalist>
+<datalist id="unitSuggestions">
+  <option value="g"></option>
+  <option value="kg"></option>
+  <option value="ml"></option>
+  <option value="l"></option>
+  <option value="stk"></option>
+  <option value="st"></option>
+  <option value="stück"></option>
+  <option value="tl"></option>
+  <option value="el"></option>
+  <option value="tasse"></option>
+</datalist>
 
 <!-- ===== Externe Nährwertbibliothek ===== -->
 <script src="naehrwerte.js"></script>
@@ -668,6 +879,17 @@
   // ============================================================
   const USER_NUTRIENT_KEY = "user_nutrients_v1";
   const FOLDER_KEY = "folders_v1";
+  const INGREDIENT_QUICK_PICKS = [
+    "Bandnudeln",
+    "Fusilli",
+    "Penne",
+    "Spaghetti",
+    "Tagliatelle",
+    "Asiatische Glasnudeln",
+    "Mie-Nudeln",
+    "Udon",
+    "Ramen"
+  ];
 
   function buildBaseLibrary() {
     const library = {};
@@ -697,10 +919,18 @@
   }
 
   function loadUserNutrients() {
-    try { return JSON.parse(localStorage.getItem(USER_NUTRIENT_KEY)) || {}; } catch { return {}; }
+    if (userNutrientsCache) return userNutrientsCache;
+    try {
+      userNutrientsCache = JSON.parse(localStorage.getItem(USER_NUTRIENT_KEY)) || {};
+    } catch {
+      userNutrientsCache = {};
+    }
+    return userNutrientsCache;
   }
   function saveUserNutrients(userLib) {
-    localStorage.setItem(USER_NUTRIENT_KEY, JSON.stringify(userLib));
+    userNutrientsCache = { ...(userLib || {}) };
+    localStorage.setItem(USER_NUTRIENT_KEY, JSON.stringify(userNutrientsCache));
+    scheduleNutrientSync();
   }
 
   function getMergedLibrary() {
@@ -712,6 +942,7 @@
   let nutrientLibrary = getMergedLibrary();
   function refreshLibrary() {
     nutrientLibrary = getMergedLibrary();
+    renderIngredientSuggestions();
   }
 
   // ============================================================
@@ -774,13 +1005,18 @@
   let backendMode = false;
   let syncTimer = null;
   let syncQueue = Promise.resolve();
+  let nutrientSyncTimer = null;
+  let nutrientSyncQueue = Promise.resolve();
+  let userNutrientsCache = null;
 
   let state = {
     recipes: [],
     selectedId: null,
     search: "",
     view: "recipes",
-    selectedFolderId: null
+    selectedFolderId: null,
+    activeFilter: "all",
+    cookStepIndex: 0
   };
 
   const els = {
@@ -816,7 +1052,21 @@
     newFolderName: document.getElementById("newFolderName"),
     folderFeedback: document.getElementById("folderFeedback"),
     refreshBtn: document.getElementById("refreshBtn"),
-    refreshFeedback: document.getElementById("refreshFeedback")
+    refreshFeedback: document.getElementById("refreshFeedback"),
+    filterChips: document.getElementById("filterChips"),
+    toastStack: document.getElementById("toastStack"),
+    confirmModal: document.getElementById("confirmModal"),
+    confirmModalMessage: document.getElementById("confirmModalMessage"),
+    confirmCancelBtn: document.getElementById("confirmCancelBtn"),
+    confirmOkBtn: document.getElementById("confirmOkBtn"),
+    cookModeModal: document.getElementById("cookModeModal"),
+    cookModeContent: document.getElementById("cookModeContent"),
+    closeCookModeModal: document.getElementById("closeCookModeModal"),
+    mobileNewRecipeBtn: document.getElementById("mobileNewRecipeBtn"),
+    mobileAddIngredientBtn: document.getElementById("mobileAddIngredientBtn"),
+    mobileAddStepBtn: document.getElementById("mobileAddStepBtn"),
+    mobileCookModeBtn: document.getElementById("mobileCookModeBtn"),
+    ingredientSuggestions: document.getElementById("ingredientSuggestions")
   };
 
   function uid() { return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8); }
@@ -853,6 +1103,7 @@
       difficulty: String(recipe.difficulty || "mittel"),
       tags: String(recipe.tags || ""),
       folderId: recipe.folderId || null,
+      favorite: !!recipe.favorite,
       ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : [createIngredient()],
       steps: Array.isArray(recipe.steps) && recipe.steps.length ? recipe.steps : [""]
     };
@@ -876,6 +1127,42 @@
     }
   }
 
+  async function loadUserNutrientsFromApi() {
+    if (!backendMode) return;
+    const rows = await apiRequest('/nutrients');
+    const mapped = {};
+    (rows || []).forEach((row) => {
+      const name = normalizeText(row?.name);
+      if (!name) return;
+      mapped[name] = {
+        kcal: Number(row.kcal) || 0,
+        protein: Number(row.protein) || 0,
+        carbs: Number(row.carbs) || 0,
+        fat: Number(row.fat) || 0
+      };
+    });
+    userNutrientsCache = mapped;
+    localStorage.setItem(USER_NUTRIENT_KEY, JSON.stringify(mapped));
+  }
+
+  async function syncUserNutrientsToApi() {
+    if (!backendMode) return;
+    await apiRequest('/nutrients/reset', { method: 'POST' });
+    const entries = Object.entries(loadUserNutrients());
+    for (const [name, val] of entries) {
+      await apiRequest('/nutrients', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          kcal: Number(val?.kcal) || 0,
+          protein: Number(val?.protein) || 0,
+          carbs: Number(val?.carbs) || 0,
+          fat: Number(val?.fat) || 0
+        })
+      });
+    }
+  }
+
   function scheduleBackendSync() {
     if (!backendMode) return;
     if (syncTimer) clearTimeout(syncTimer);
@@ -887,6 +1174,18 @@
           backendMode = false;
           els.refreshFeedback.textContent = "⚠️ Offline-Modus";
           els.refreshFeedback.classList.add('show');
+        });
+    }, 350);
+  }
+
+  function scheduleNutrientSync() {
+    if (!backendMode) return;
+    if (nutrientSyncTimer) clearTimeout(nutrientSyncTimer);
+    nutrientSyncTimer = setTimeout(() => {
+      nutrientSyncQueue = nutrientSyncQueue
+        .then(() => syncUserNutrientsToApi())
+        .catch((error) => {
+          console.warn("Nährwert-Sync fehlgeschlagen:", error);
         });
     }, 350);
   }
@@ -926,6 +1225,128 @@
   }
   function normalizeText(value) { return String(value || "").trim(); }
 
+  function buildIngredientSuggestions() {
+    const byKey = Object.keys(nutrientLibrary || {});
+    const merged = [...byKey, ...INGREDIENT_QUICK_PICKS];
+    const unique = [];
+    const seen = new Set();
+
+    merged.forEach((name) => {
+      const clean = normalizeText(name);
+      if (!clean) return;
+      const lower = clean.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      unique.push(clean);
+    });
+
+    unique.sort((a, b) => a.localeCompare(b, "de"));
+    return unique.slice(0, 700);
+  }
+
+  function renderIngredientSuggestions() {
+    if (!els.ingredientSuggestions) return;
+    const suggestions = buildIngredientSuggestions();
+    els.ingredientSuggestions.innerHTML = suggestions
+      .map((name) => `<option value="${escapeAttr(name)}"></option>`)
+      .join("");
+  }
+
+  function showToast(message, type = "success") {
+    const toast = document.createElement("div");
+    toast.className = `toast ${type === "success" ? "" : type}`.trim();
+    toast.textContent = message;
+    els.toastStack.appendChild(toast);
+    setTimeout(() => toast.remove(), 2800);
+  }
+
+  function confirmAction(message) {
+    return new Promise((resolve) => {
+      els.confirmModalMessage.textContent = message;
+      els.confirmModal.classList.add("open");
+
+      const cleanup = () => {
+        els.confirmModal.classList.remove("open");
+        els.confirmOkBtn.removeEventListener("click", onOk);
+        els.confirmCancelBtn.removeEventListener("click", onCancel);
+      };
+
+      const onOk = () => {
+        cleanup();
+        resolve(true);
+      };
+
+      const onCancel = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      els.confirmOkBtn.addEventListener("click", onOk);
+      els.confirmCancelBtn.addEventListener("click", onCancel);
+      firstFocusable(els.confirmModal)?.focus();
+    });
+  }
+
+  function recipeMatchesFilter(recipe) {
+    if (state.activeFilter === "all") return true;
+    if (state.activeFilter === "favorites") return !!recipe.favorite;
+    return String(recipe.difficulty || "").toLowerCase() === state.activeFilter;
+  }
+
+  function parseMinutes(raw) {
+    const text = String(raw || "").toLowerCase();
+    const match = text.match(/\d+/);
+    return match ? Number(match[0]) : 0;
+  }
+
+  function openCookMode() {
+    const recipe = selectedRecipe();
+    if (!recipe) {
+      showToast("Bitte zuerst ein Rezept auswählen.", "info");
+      return;
+    }
+    state.cookStepIndex = Math.min(state.cookStepIndex || 0, Math.max((recipe.steps?.length || 1) - 1, 0));
+    renderCookMode(recipe);
+    els.cookModeModal.classList.add("open");
+    firstFocusable(els.cookModeModal)?.focus();
+  }
+
+  function closeCookMode() {
+    els.cookModeModal.classList.remove("open");
+  }
+
+  function renderCookMode(recipe) {
+    const steps = (recipe.steps || []).filter(s => normalizeText(s));
+    const safeSteps = steps.length ? steps : ["Noch keine Zubereitungsschritte vorhanden."];
+    const index = Math.max(0, Math.min(state.cookStepIndex, safeSteps.length - 1));
+    state.cookStepIndex = index;
+    const currentStep = safeSteps[index];
+
+    els.cookModeContent.innerHTML = `
+      <div class="cook-hero">
+        <strong>${escapeHtml(recipe.name)}</strong>
+        <div class="muted">${escapeHtml(recipe.category || "Kategorie")} · ${Number(recipe.portions) || 1} Portionen</div>
+      </div>
+      <div class="cook-step">
+        <div class="muted">Schritt ${index + 1} von ${safeSteps.length}</div>
+        <p style="margin-top:8px; font-size:1.02rem;">${escapeHtml(currentStep)}</p>
+      </div>
+      <div class="cook-controls">
+        <button id="cookPrevBtn" class="secondary" ${index === 0 ? "disabled" : ""}>◀ Zurück</button>
+        <button id="cookNextBtn" ${index >= safeSteps.length - 1 ? "disabled" : ""}>Weiter ▶</button>
+      </div>
+    `;
+
+    document.getElementById("cookPrevBtn")?.addEventListener("click", () => {
+      state.cookStepIndex = Math.max(0, state.cookStepIndex - 1);
+      renderCookMode(recipe);
+    });
+    document.getElementById("cookNextBtn")?.addEventListener("click", () => {
+      state.cookStepIndex = Math.min(safeSteps.length - 1, state.cookStepIndex + 1);
+      renderCookMode(recipe);
+    });
+  }
+
   // ============================================================
   //  4.  NÄHRWERT-LOGIK
   // ============================================================
@@ -952,7 +1373,7 @@
     const key = ingredient.nutrientKey || findNutrientKey(ingredient.name);
     const base = nutrientLibrary[key] || null;
     const amount = Number(ingredient.amount) || 0;
-    const unit = String(ingredient.unit || "g").toLowerCase();
+    const unit = String(ingredient.unit || "g").toLowerCase().trim();
 
     if (!base) {
       return {
@@ -965,13 +1386,13 @@
     }
 
     let grams = amount;
-    if (unit.includes("kg")) grams = amount * 1000;
-    if (unit.includes("ml")) grams = amount;
-    if (unit.includes("l")) grams = amount * 1000;
-    if (unit.includes("tasse")) grams = amount * 240;
-    if (unit.includes("el")) grams = amount * 15;
-    if (unit.includes("tl")) grams = amount * 5;
-    if (unit.includes("stück") || unit === "stk" || unit === "st") grams = amount * 100;
+    if (unit === "kg") grams = amount * 1000;
+    else if (unit === "ml") grams = amount;
+    else if (unit === "l") grams = amount * 1000;
+    else if (unit === "tasse") grams = amount * 240;
+    else if (unit === "el") grams = amount * 15;
+    else if (unit === "tl") grams = amount * 5;
+    else if (["stück", "stücke", "stk", "st"].includes(unit)) grams = amount * 100;
 
     const factor = grams / 100;
     return {
@@ -1024,6 +1445,12 @@
       const remoteRecipes = await apiRequest('/recipes');
       if (Array.isArray(remoteRecipes)) {
         backendMode = true;
+        try {
+          await loadUserNutrientsFromApi();
+        } catch (error) {
+          console.warn("Nährwertdaten konnten nicht vom Server geladen werden:", error);
+        }
+        refreshLibrary();
         state.recipes = remoteRecipes.map(normalizeRecipeForState);
         state.selectedId = state.recipes[0]?.id || null;
         state.selectedFolderId = null;
@@ -1072,6 +1499,7 @@
       cookingTime: "",
       difficulty: "mittel",
       tags: "",
+      favorite: false,
       folderId: folderId,
       ingredients: [{ name: "", amount: 100, unit: "g", nutrientKey: "", kcal: 0, protein: 0, carbs: 0, fat: 0 }],
       steps: [""]
@@ -1158,16 +1586,18 @@
     });
 
     els.folderList.querySelectorAll('[data-delete-folder]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.dataset.deleteFolder;
         const folders = loadFolders();
         const folder = folders.find(f => f.id === id);
         if (!folder) return;
-        if (!confirm(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten (verschoben in "Kein Ordner").`)) return;
+        const ok = await confirmAction(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten (verschoben in "Kein Ordner").`);
+        if (!ok) return;
         deleteFolder(id);
         renderFolderList();
         renderRecipeList();
+        showToast("Ordner gelöscht.", "info");
       });
     });
   }
@@ -1187,6 +1617,8 @@
       r.tags.toLowerCase().includes(search) ||
       r.category.toLowerCase().includes(search));
 
+    filtered = filtered.filter(recipeMatchesFilter);
+
     filtered.sort((a, b) => a.name.localeCompare(b.name, "de"));
 
     if (filtered.length === 0) {
@@ -1197,10 +1629,19 @@
     els.recipeList.innerHTML = filtered.map(recipe => {
       const p = perPortion(recipe);
       const folderName = getFolderName(recipe.folderId);
+      const totalMinutes = parseMinutes(recipe.prepTime) + parseMinutes(recipe.cookingTime);
       return `
         <div class="recipe-card ${recipe.id === state.selectedId ? "active" : ""}" data-id="${recipe.id}">
-          <strong>${escapeHtml(recipe.name || "Unbenannt")}</strong>
+          <div class="card-top">
+            <strong>${escapeHtml(recipe.name || "Unbenannt")}</strong>
+            <button class="favorite-btn ${recipe.favorite ? "active" : ""}" data-fav-id="${recipe.id}" aria-label="Favorit umschalten">${recipe.favorite ? "★" : "☆"}</button>
+          </div>
           <div class="muted">${escapeHtml(recipe.category || "Kategorie")} · ${Number(recipe.portions) || 1} Port. <span class="folder-tag">${escapeHtml(folderName)}</span></div>
+          <div class="meta-grid">
+            <span class="meta-pill">⏱ ${totalMinutes || "-"} Min</span>
+            <span class="meta-pill">🎯 ${escapeHtml(recipe.difficulty || "mittel")}</span>
+            <span class="meta-pill">🥕 ${recipe.ingredients.length} Zutaten</span>
+          </div>
           <span class="kcal-badge">🔥 ${formatNumber(p.kcal)} kcal</span>
         </div>
       `;
@@ -1213,6 +1654,17 @@
         renderEditor();
         document.querySelectorAll('.recipe-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
+      });
+    });
+
+    els.recipeList.querySelectorAll('[data-fav-id]').forEach(button => {
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const recipe = state.recipes.find(r => r.id === button.dataset.favId);
+        if (!recipe) return;
+        recipe.favorite = !recipe.favorite;
+        save();
+        renderRecipeList();
       });
     });
   }
@@ -1323,6 +1775,7 @@
 
         <div class="toolbar no-print" style="margin-top:8px; padding:12px 0; background:transparent; border:0; box-shadow:none;">
           <div class="toolbar-left">
+            <button id="cookModeBtn">🍽️ Kochmodus</button>
             <button id="duplicateBtn" class="secondary">📋 Duplizieren</button>
             <button id="deleteBtn" class="danger">🗑️ Löschen</button>
           </div>
@@ -1344,11 +1797,11 @@
     return `
       <tr class="ingredient-row">
         <td>
-          <input data-ingredient="${index}" data-field="name" value="${escapeAttr(ingredient.name)}" placeholder="z.B. Reis" />
+          <input data-ingredient="${index}" data-field="name" value="${escapeAttr(ingredient.name)}" placeholder="z.B. Reis" list="ingredientSuggestions" autocomplete="off" />
           <div class="muted">${libraryNote}</div>
         </td>
         <td><input data-ingredient="${index}" data-field="amount" type="number" min="0" step="1" value="${escapeAttr(ingredient.amount)}" class="short" /></td>
-        <td><input data-ingredient="${index}" data-field="unit" value="${escapeAttr(ingredient.unit)}" placeholder="g/ml" /></td>
+        <td><input data-ingredient="${index}" data-field="unit" value="${escapeAttr(ingredient.unit)}" placeholder="z.B. g, ml, stk" list="unitSuggestions" autocomplete="off" /></td>
         <td>
           <input data-ingredient="${index}" data-field="nutrientKey" value="${escapeAttr(ingredient.nutrientKey)}" placeholder="automatisch" />
           <div class="nutrition-inputs">
@@ -1493,10 +1946,16 @@
       renderEditor();
     });
 
-    document.getElementById("duplicateBtn")?.addEventListener("click", () => duplicateRecipe(recipe));
-    document.getElementById("deleteBtn")?.addEventListener("click", () => {
-      if (!confirm(`Rezept "${recipe.name}" wirklich löschen?`)) return;
+    document.getElementById("cookModeBtn")?.addEventListener("click", openCookMode);
+    document.getElementById("duplicateBtn")?.addEventListener("click", () => {
+      duplicateRecipe(recipe);
+      showToast("Rezept dupliziert.");
+    });
+    document.getElementById("deleteBtn")?.addEventListener("click", async () => {
+      const ok = await confirmAction(`Rezept "${recipe.name}" wirklich löschen?`);
+      if (!ok) return;
       deleteRecipe(recipe);
+      showToast("Rezept gelöscht.", "info");
     });
   }
 
@@ -1588,41 +2047,109 @@
   // ============================================================
   //  9.  NÄHRWERT-VERWALTUNG (Modal)
   // ============================================================
+  function getBaseNutrientRows() {
+    const rows = [];
+    const seen = new Set();
+    const data = window.NUTRIENT_DATA;
+
+    if (data && data.categories) {
+      Object.entries(data.categories).forEach(([categoryName, category]) => {
+        (category.items || []).forEach((item) => {
+          const name = normalizeText(item?.name);
+          if (!name) return;
+          const lower = name.toLowerCase();
+          if (seen.has(lower)) return;
+          seen.add(lower);
+          rows.push({
+            name,
+            category: categoryName,
+            kcal: Number(item?.kcal) || 0,
+            protein: Number(item?.protein) || 0,
+            carbs: Number(item?.carbs) || 0,
+            fat: Number(item?.fat) || 0
+          });
+        });
+      });
+    }
+
+    if (rows.length === 0) {
+      Object.entries(buildBaseLibrary()).forEach(([name, val]) => {
+        const cleanName = normalizeText(name);
+        if (!cleanName) return;
+        const lower = cleanName.toLowerCase();
+        if (seen.has(lower)) return;
+        seen.add(lower);
+        rows.push({
+          name: cleanName,
+          category: "Basis",
+          kcal: Number(val?.kcal) || 0,
+          protein: Number(val?.protein) || 0,
+          carbs: Number(val?.carbs) || 0,
+          fat: Number(val?.fat) || 0
+        });
+      });
+    }
+
+    return rows.sort((a, b) =>
+      a.category.localeCompare(b.category, "de") || a.name.localeCompare(b.name, "de")
+    );
+  }
+
   function renderNutrientList() {
     const userLib = loadUserNutrients();
-    const allKeys = Object.keys(userLib);
-    if (allKeys.length === 0) {
-      els.nutrientList.innerHTML = `<p class="muted">Bisher keine eigenen Zutaten hinzugefügt.</p>`;
-      return;
-    }
+    const userEntries = Object.entries(userLib).sort((a, b) => a[0].localeCompare(b[0], "de"));
+    const baseRows = getBaseNutrientRows();
+
     els.nutrientList.innerHTML = `
-      <table style="min-width:0; font-size:0.85rem;">
-        <thead><tr><th>Name</th><th>kcal</th><th>P</th><th>K</th><th>F</th><th>Aktion</th></tr></thead>
+      <h3>📚 Basis-Zutaten aus naehrwerte.js (${baseRows.length})</h3>
+      <table style="min-width:0; font-size:0.85rem; margin-bottom: 12px;">
+        <thead><tr><th>Name</th><th>Kategorie</th><th>kcal</th><th>P</th><th>K</th><th>F</th></tr></thead>
         <tbody>
-          ${allKeys.map(key => {
-            const val = userLib[key];
+          ${baseRows.map(row => {
             return `<tr>
-              <td><strong>${escapeHtml(key)}</strong></td>
-              <td>${val.kcal}</td>
-              <td>${val.protein}</td>
-              <td>${val.carbs}</td>
-              <td>${val.fat}</td>
-              <td><button class="small danger" data-remove-user-nutrient="${escapeAttr(key)}">Löschen</button></td>
+              <td><strong>${escapeHtml(row.name)}</strong></td>
+              <td>${escapeHtml(row.category)}</td>
+              <td>${row.kcal}</td>
+              <td>${row.protein}</td>
+              <td>${row.carbs}</td>
+              <td>${row.fat}</td>
             </tr>`;
           }).join("")}
         </tbody>
       </table>
+
+      <h3>🧪 Eigene Zutaten (${userEntries.length})</h3>
+      ${userEntries.length === 0
+        ? `<p class="muted">Bisher keine eigenen Zutaten hinzugefügt.</p>`
+        : `<table style="min-width:0; font-size:0.85rem;">
+            <thead><tr><th>Name</th><th>kcal</th><th>P</th><th>K</th><th>F</th><th>Aktion</th></tr></thead>
+            <tbody>
+              ${userEntries.map(([key, val]) => {
+                return `<tr>
+                  <td><strong>${escapeHtml(key)}</strong></td>
+                  <td>${Number(val?.kcal) || 0}</td>
+                  <td>${Number(val?.protein) || 0}</td>
+                  <td>${Number(val?.carbs) || 0}</td>
+                  <td>${Number(val?.fat) || 0}</td>
+                  <td><button class="small danger" data-remove-user-nutrient="${escapeAttr(key)}">Löschen</button></td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>`
+      }
     `;
     els.nutrientList.querySelectorAll("[data-remove-user-nutrient]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const name = btn.dataset.removeUserNutrient;
-        if (!confirm(`"${name}" wirklich löschen?`)) return;
+        const ok = await confirmAction(`"${name}" wirklich löschen?`);
+        if (!ok) return;
         const user = loadUserNutrients();
         delete user[name];
         saveUserNutrients(user);
         refreshLibrary();
         renderNutrientList();
         renderEditor();
+        showToast("Nährwert entfernt.", "info");
       });
     });
   }
@@ -1710,16 +2237,18 @@
       });
     });
     els.folderManageList.querySelectorAll('[data-delete-folder-modal]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = btn.dataset.deleteFolderModal;
         const folders = loadFolders();
         const folder = folders.find(f => f.id === id);
         if (!folder) return;
-        if (!confirm(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten.`)) return;
+        const ok = await confirmAction(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten.`);
+        if (!ok) return;
         deleteFolder(id);
         renderFolderManageList();
         renderFolderList();
         renderRecipeList();
+        showToast("Ordner gelöscht.", "info");
       });
     });
   }
@@ -1732,6 +2261,116 @@
 
   function closeFolderModal() {
     els.folderModal.classList.remove("open");
+  }
+
+  function renderNutrientsPage() {
+    const userLib = loadUserNutrients();
+    const userEntries = Object.entries(userLib).sort((a, b) => a[0].localeCompare(b[0], "de"));
+    const baseRows = getBaseNutrientRows();
+
+    els.editor.innerHTML = `
+      <div class="form-grid">
+        <div class="hint">📚 Basis-Zutaten stammen aus der Datei naehrwerte.js. Eigene Zutaten werden separat gespeichert und können hier direkt verwaltet werden.</div>
+
+        <h2>📚 Basis-Zutaten aus naehrwerte.js (${baseRows.length})</h2>
+        <div class="table-wrapper no-print">
+          <table style="min-width:0; font-size:0.85rem;">
+            <thead><tr><th>Name</th><th>Kategorie</th><th>kcal</th><th>P</th><th>K</th><th>F</th></tr></thead>
+            <tbody>
+              ${baseRows.map(row => `<tr>
+                <td><strong>${escapeHtml(row.name)}</strong></td>
+                <td>${escapeHtml(row.category)}</td>
+                <td>${row.kcal}</td>
+                <td>${row.protein}</td>
+                <td>${row.carbs}</td>
+                <td>${row.fat}</td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <h2>🧪 Eigene Zutaten (${userEntries.length})</h2>
+        <div class="table-wrapper no-print">
+          ${userEntries.length === 0
+            ? `<div class="empty" style="padding: 16px;">Noch keine eigenen Zutaten vorhanden.</div>`
+            : `<table style="min-width:0; font-size:0.85rem;">
+                <thead><tr><th>Name</th><th>kcal</th><th>P</th><th>K</th><th>F</th><th>Aktion</th></tr></thead>
+                <tbody>
+                  ${userEntries.map(([name, val]) => `<tr>
+                    <td><strong>${escapeHtml(name)}</strong></td>
+                    <td>${Number(val?.kcal) || 0}</td>
+                    <td>${Number(val?.protein) || 0}</td>
+                    <td>${Number(val?.carbs) || 0}</td>
+                    <td>${Number(val?.fat) || 0}</td>
+                    <td><button class="small danger" data-remove-user-nutrient-page="${escapeAttr(name)}">Löschen</button></td>
+                  </tr>`).join("")}
+                </tbody>
+              </table>`
+          }
+        </div>
+
+        <h2>➕ Eigene Zutat hinzufügen</h2>
+        <form id="addNutrientPageForm" class="no-print" style="display:grid; gap:10px;">
+          <div class="inline-grid">
+            <label>Name <input type="text" id="newNutrientPageName" placeholder="z.B. Proteinpasta" required /></label>
+            <label>Alias (optional) <input type="text" id="newNutrientPageAlias" placeholder="z.B. High Protein Nudeln" /></label>
+          </div>
+          <div class="inline-grid">
+            <label>kcal <input type="number" id="newNutrientPageKcal" placeholder="0" /></label>
+            <label>Eiweiß (g) <input type="number" step="0.1" id="newNutrientPageProtein" placeholder="0" /></label>
+            <label>Kohlenhydrate (g) <input type="number" step="0.1" id="newNutrientPageCarbs" placeholder="0" /></label>
+            <label>Fett (g) <input type="number" step="0.1" id="newNutrientPageFat" placeholder="0" /></label>
+          </div>
+          <div class="toolbar" style="padding:0; border:0; box-shadow:none; background:transparent;">
+            <div class="toolbar-left">
+              <button type="submit" class="secondary">💾 Speichern</button>
+            </div>
+          </div>
+          <p class="muted" id="nutrientPageFeedback"></p>
+        </form>
+      </div>
+    `;
+
+    els.editor.querySelectorAll('[data-remove-user-nutrient-page]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.removeUserNutrientPage;
+        const ok = await confirmAction(`"${name}" wirklich löschen?`);
+        if (!ok) return;
+        const next = loadUserNutrients();
+        delete next[name];
+        saveUserNutrients(next);
+        refreshLibrary();
+        renderNutrientsPage();
+        showToast("Nährwert entfernt.", "info");
+      });
+    });
+
+    const pageForm = document.getElementById('addNutrientPageForm');
+    pageForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = normalizeText(document.getElementById('newNutrientPageName')?.value);
+      const alias = normalizeText(document.getElementById('newNutrientPageAlias')?.value);
+      const kcal = parseFloat(document.getElementById('newNutrientPageKcal')?.value) || 0;
+      const protein = parseFloat(document.getElementById('newNutrientPageProtein')?.value) || 0;
+      const carbs = parseFloat(document.getElementById('newNutrientPageCarbs')?.value) || 0;
+      const fat = parseFloat(document.getElementById('newNutrientPageFat')?.value) || 0;
+      const feedback = document.getElementById('nutrientPageFeedback');
+
+      if (!name) {
+        if (feedback) feedback.textContent = "⚠️ Bitte einen Namen eingeben.";
+        return;
+      }
+
+      const next = loadUserNutrients();
+      next[name] = { kcal, protein, carbs, fat };
+      if (alias && alias !== name) {
+        next[alias] = { kcal, protein, carbs, fat };
+      }
+      saveUserNutrients(next);
+      refreshLibrary();
+      renderNutrientsPage();
+      showToast(`"${name}" gespeichert.`);
+    });
   }
 
   els.addFolderForm.addEventListener("submit", (e) => {
@@ -1802,9 +2441,9 @@
         }
         save();
         render();
-        alert("Kochbuch erfolgreich importiert.");
+        showToast("Kochbuch erfolgreich importiert.");
       } catch (err) {
-        alert("Import fehlgeschlagen: " + err.message);
+        showToast("Import fehlgeschlagen: " + err.message, "error");
       }
     };
     reader.readAsText(file);
@@ -1838,18 +2477,17 @@
     if (view === "recipes") {
       els.recipeToolbar.style.display = "flex";
       els.recipeListPanel.style.display = "block";
+      if (els.mobileNewRecipeBtn?.parentElement) {
+        els.mobileNewRecipeBtn.parentElement.style.display = "grid";
+      }
       render();
     } else if (view === "nutrients") {
       els.recipeToolbar.style.display = "none";
       els.recipeListPanel.style.display = "none";
-      els.editor.innerHTML = `
-        <div class="empty">
-          <h2>📊 Nährwertbibliothek</h2>
-          <p>Hier kannst du eigene Zutaten mit Nährwerten hinzufügen.</p>
-          <button id="openNutrientBtn" class="secondary">➕ Zutat hinzufügen / verwalten</button>
-        </div>
-      `;
-      document.getElementById("openNutrientBtn")?.addEventListener("click", openNutrientModal);
+      if (els.mobileNewRecipeBtn?.parentElement) {
+        els.mobileNewRecipeBtn.parentElement.style.display = "none";
+      }
+      renderNutrientsPage();
     }
   }
 
@@ -1876,8 +2514,18 @@
   els.newRecipeBtn.addEventListener("click", () => {
     const folderId = state.selectedFolderId === 'none' ? null : state.selectedFolderId;
     createRecipe(folderId);
+    showToast("Neues Rezept angelegt.");
   });
   els.newFolderBtn.addEventListener("click", openFolderModal);
+
+  els.filterChips?.querySelectorAll('[data-filter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      state.activeFilter = chip.dataset.filter;
+      els.filterChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      renderRecipeList();
+    });
+  });
 
   els.exportNavBtn.addEventListener("click", exportData);
   els.importNavFile.addEventListener("change", e => {
@@ -1886,6 +2534,35 @@
     e.target.value = "";
   });
   els.printNavBtn.addEventListener("click", () => window.print());
+
+  els.mobileNewRecipeBtn?.addEventListener("click", () => {
+    const folderId = state.selectedFolderId === 'none' ? null : state.selectedFolderId;
+    createRecipe(folderId);
+    showToast("Neues Rezept angelegt.");
+  });
+  els.mobileAddIngredientBtn?.addEventListener("click", () => {
+    const recipe = selectedRecipe();
+    if (!recipe) {
+      showToast("Bitte zuerst ein Rezept auswählen.", "info");
+      return;
+    }
+    recipe.ingredients.push(createIngredient());
+    save();
+    renderEditor();
+    showToast("Zutat hinzugefügt.");
+  });
+  els.mobileAddStepBtn?.addEventListener("click", () => {
+    const recipe = selectedRecipe();
+    if (!recipe) {
+      showToast("Bitte zuerst ein Rezept auswählen.", "info");
+      return;
+    }
+    recipe.steps.push("");
+    save();
+    renderEditor();
+    showToast("Schritt hinzugefügt.");
+  });
+  els.mobileCookModeBtn?.addEventListener("click", openCookMode);
 
   // Refresh-Button
   els.refreshBtn.addEventListener("click", () => {
@@ -1908,10 +2585,22 @@
   });
   els.folderModal.addEventListener("keydown", (e) => trapModalFocus(e, els.folderModal));
 
+  els.confirmModal.addEventListener("click", (e) => {
+    if (e.target === els.confirmModal) els.confirmCancelBtn.click();
+  });
+
+  els.cookModeModal.addEventListener("click", (e) => {
+    if (e.target === els.cookModeModal) closeCookMode();
+  });
+  els.closeCookModeModal.addEventListener("click", closeCookMode);
+  els.cookModeModal.addEventListener("keydown", (e) => trapModalFocus(e, els.cookModeModal));
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (els.nutrientModal.classList.contains("open")) closeNutrientModal();
     if (els.folderModal.classList.contains("open")) closeFolderModal();
+    if (els.confirmModal.classList.contains("open")) els.confirmCancelBtn.click();
+    if (els.cookModeModal.classList.contains("open")) closeCookMode();
   });
 
   // Suche
@@ -1924,6 +2613,7 @@
   //  15. START
   // ============================================================
   async function initApp() {
+    renderIngredientSuggestions();
     await loadRecipes();
     switchView("recipes");
   }

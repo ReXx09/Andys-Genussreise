@@ -44,6 +44,17 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nutrient_entries (
+    name TEXT PRIMARY KEY,
+    kcal REAL NOT NULL DEFAULT 0,
+    protein REAL NOT NULL DEFAULT 0,
+    carbs REAL NOT NULL DEFAULT 0,
+    fat REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 const columns = db.prepare("PRAGMA table_info(recipes)").all();
 if (!columns.some((col) => col.name === 'folder_id')) {
   db.exec("ALTER TABLE recipes ADD COLUMN folder_id TEXT DEFAULT NULL");
@@ -116,6 +127,17 @@ function normalizeRecipe(input) {
     folderId: input.folderId ? clampString(input.folderId, 80) : null,
     ingredients: ingredients.map(normalizeIngredient),
     steps: steps.map((step) => clampString(step, 2000))
+  };
+}
+
+function normalizeNutrient(input) {
+  const name = clampString(input?.name, 120).trim();
+  return {
+    name,
+    kcal: Number(input?.kcal) || 0,
+    protein: Number(input?.protein) || 0,
+    carbs: Number(input?.carbs) || 0,
+    fat: Number(input?.fat) || 0
   };
 }
 
@@ -230,6 +252,63 @@ app.delete('/api/recipes/:id', (req, res) => {
 
 app.post('/api/recipes/reset', (req, res) => {
   db.prepare('DELETE FROM recipes').run();
+  res.json({ ok: true });
+});
+
+app.get('/api/nutrients', (req, res) => {
+  const rows = db.prepare('SELECT name, kcal, protein, carbs, fat, updated_at FROM nutrient_entries ORDER BY name COLLATE NOCASE ASC').all();
+  res.json(rows.map((row) => ({
+    name: row.name,
+    kcal: row.kcal,
+    protein: row.protein,
+    carbs: row.carbs,
+    fat: row.fat,
+    updatedAt: row.updated_at
+  })));
+});
+
+app.post('/api/nutrients', (req, res) => {
+  const nutrient = normalizeNutrient(req.body);
+  if (!nutrient.name) {
+    return res.status(400).json({ error: 'Name ist erforderlich' });
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO nutrient_entries (name, kcal, protein, carbs, fat, updated_at)
+    VALUES (@name, @kcal, @protein, @carbs, @fat, @updated_at)
+    ON CONFLICT(name) DO UPDATE SET
+      kcal = excluded.kcal,
+      protein = excluded.protein,
+      carbs = excluded.carbs,
+      fat = excluded.fat,
+      updated_at = excluded.updated_at
+  `).run({
+    name: nutrient.name,
+    kcal: nutrient.kcal,
+    protein: nutrient.protein,
+    carbs: nutrient.carbs,
+    fat: nutrient.fat,
+    updated_at: now
+  });
+
+  res.status(201).json({ ...nutrient, updatedAt: now });
+});
+
+app.delete('/api/nutrients/:name', (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) {
+    return res.status(400).json({ error: 'Name ist erforderlich' });
+  }
+  const info = db.prepare('DELETE FROM nutrient_entries WHERE name = ?').run(name);
+  if (info.changes === 0) {
+    return res.status(404).json({ error: 'Nährwert nicht gefunden' });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/nutrients/reset', (req, res) => {
+  db.prepare('DELETE FROM nutrient_entries').run();
   res.json({ ok: true });
 });
 
