@@ -235,6 +235,9 @@
       gap: 24px;
       align-items: start;
     }
+    .grid.nutrients-layout {
+      grid-template-columns: 1fr;
+    }
     @media (max-width: 880px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -255,6 +258,96 @@
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    .nutrient-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .nutrient-card {
+      background: linear-gradient(180deg, #fff, #fcfaf7);
+      border: 1px solid #ebdfd2;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+    }
+    .nutrient-card h2 {
+      margin-bottom: 10px;
+    }
+    .nutrient-category-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      margin-bottom: 10px;
+    }
+    .nutrient-cat-btn {
+      border: 1px solid #e4d5c3;
+      border-radius: 999px;
+      background: #fff8f0;
+      color: #704f2b;
+      font-size: 0.78rem;
+      padding: 5px 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      box-shadow: none;
+    }
+    .nutrient-cat-btn:hover {
+      transform: none;
+      box-shadow: none;
+      background: #ffe7cf;
+    }
+    .nutrient-cat-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    .nutrient-actions-nav {
+      position: sticky;
+      bottom: 12px;
+      z-index: 900;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      backdrop-filter: blur(6px);
+    }
+    .nutrient-actions-nav button {
+      justify-content: center;
+      border-radius: 10px;
+      padding: 10px 8px;
+      font-size: 0.84rem;
+    }
+    .nutrient-row-selectable {
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .nutrient-row-selectable:hover {
+      background: #fff8ef;
+    }
+    .nutrient-row-selectable.active {
+      background: #fff1e0;
+      box-shadow: inset 0 0 0 1px #f1caa0;
+    }
+
+    @media (max-width: 1100px) {
+      .nutrient-workspace {
+        grid-template-columns: 1fr;
+      }
+      .nutrient-actions-nav {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* ===== Ordner & Rezeptliste ===== */
@@ -846,6 +939,27 @@
       <div id="cookModeContent"></div>
     </div>
   </div>
+
+  <div class="modal-overlay" id="nutrientEntryModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="nutrientEntryTitle">
+      <button class="close-btn" id="closeNutrientEntryModal" aria-label="Nährwert-Editor schließen">✕</button>
+      <h2 id="nutrientEntryTitle">➕ Eigene Zutat</h2>
+      <form id="nutrientEntryForm" style="display:grid; gap:10px;">
+        <div class="inline-grid">
+          <label>Name <input type="text" id="entryNutrientName" required /></label>
+          <label>Alias (optional) <input type="text" id="entryNutrientAlias" /></label>
+        </div>
+        <div class="inline-grid">
+          <label>kcal <input type="number" id="entryNutrientKcal" placeholder="0" /></label>
+          <label>Eiweiß (g) <input type="number" step="0.1" id="entryNutrientProtein" placeholder="0" /></label>
+          <label>Kohlenhydrate (g) <input type="number" step="0.1" id="entryNutrientCarbs" placeholder="0" /></label>
+          <label>Fett (g) <input type="number" step="0.1" id="entryNutrientFat" placeholder="0" /></label>
+        </div>
+        <p id="nutrientEntryFeedback" class="muted"></p>
+        <button type="submit" class="secondary" id="saveNutrientEntryBtn">💾 Speichern</button>
+      </form>
+    </div>
+  </div>
 </main>
 
 <div class="mobile-actions no-print" id="mobileActions">
@@ -890,6 +1004,7 @@
     "Udon",
     "Ramen"
   ];
+  let userNutrientsCache = null;
 
   function buildBaseLibrary() {
     const library = {};
@@ -1007,7 +1122,8 @@
   let syncQueue = Promise.resolve();
   let nutrientSyncTimer = null;
   let nutrientSyncQueue = Promise.resolve();
-  let userNutrientsCache = null;
+  let nutrientEntryMode = "create";
+  let nutrientEntryOriginalName = "";
 
   let state = {
     recipes: [],
@@ -1016,7 +1132,9 @@
     view: "recipes",
     selectedFolderId: null,
     activeFilter: "all",
-    cookStepIndex: 0
+    cookStepIndex: 0,
+    nutrientCategory: "alle",
+    selectedCustomNutrient: null
   };
 
   const els = {
@@ -1030,6 +1148,7 @@
     recipeToolbar: document.getElementById("recipeToolbar"),
     recipeListPanel: document.getElementById("recipeListPanel"),
     mainPanel: document.getElementById("mainPanel"),
+    workspaceGrid: document.querySelector("main .grid"),
     nutrientModal: document.getElementById("nutrientModal"),
     closeNutrientModal: document.getElementById("closeNutrientModal"),
     nutrientList: document.getElementById("nutrientList"),
@@ -1062,6 +1181,18 @@
     cookModeModal: document.getElementById("cookModeModal"),
     cookModeContent: document.getElementById("cookModeContent"),
     closeCookModeModal: document.getElementById("closeCookModeModal"),
+    nutrientEntryModal: document.getElementById("nutrientEntryModal"),
+    closeNutrientEntryModal: document.getElementById("closeNutrientEntryModal"),
+    nutrientEntryForm: document.getElementById("nutrientEntryForm"),
+    nutrientEntryTitle: document.getElementById("nutrientEntryTitle"),
+    nutrientEntryFeedback: document.getElementById("nutrientEntryFeedback"),
+    entryNutrientName: document.getElementById("entryNutrientName"),
+    entryNutrientAlias: document.getElementById("entryNutrientAlias"),
+    entryNutrientKcal: document.getElementById("entryNutrientKcal"),
+    entryNutrientProtein: document.getElementById("entryNutrientProtein"),
+    entryNutrientCarbs: document.getElementById("entryNutrientCarbs"),
+    entryNutrientFat: document.getElementById("entryNutrientFat"),
+    saveNutrientEntryBtn: document.getElementById("saveNutrientEntryBtn"),
     mobileNewRecipeBtn: document.getElementById("mobileNewRecipeBtn"),
     mobileAddIngredientBtn: document.getElementById("mobileAddIngredientBtn"),
     mobileAddStepBtn: document.getElementById("mobileAddStepBtn"),
@@ -2263,114 +2394,188 @@
     els.folderModal.classList.remove("open");
   }
 
+  function openNutrientEntryModal(mode = "create") {
+    nutrientEntryMode = mode;
+    nutrientEntryOriginalName = "";
+    els.nutrientEntryFeedback.textContent = "";
+
+    if (mode === "edit") {
+      const selectedName = state.selectedCustomNutrient;
+      const userLib = loadUserNutrients();
+      if (!selectedName || !userLib[selectedName]) {
+        showToast("Bitte zuerst eine eigene Zutat auswählen.", "info");
+        return;
+      }
+      nutrientEntryOriginalName = selectedName;
+      const val = userLib[selectedName];
+      els.nutrientEntryTitle.textContent = "✏️ Eigene Zutat bearbeiten";
+      els.entryNutrientName.value = selectedName;
+      els.entryNutrientAlias.value = "";
+      els.entryNutrientKcal.value = Number(val?.kcal) || 0;
+      els.entryNutrientProtein.value = Number(val?.protein) || 0;
+      els.entryNutrientCarbs.value = Number(val?.carbs) || 0;
+      els.entryNutrientFat.value = Number(val?.fat) || 0;
+      els.saveNutrientEntryBtn.textContent = "💾 Änderungen speichern";
+    } else {
+      els.nutrientEntryTitle.textContent = "➕ Eigene Zutat hinzufügen";
+      els.nutrientEntryForm.reset();
+      els.saveNutrientEntryBtn.textContent = "💾 Speichern";
+    }
+
+    els.nutrientEntryModal.classList.add("open");
+    firstFocusable(els.nutrientEntryModal)?.focus();
+  }
+
+  function closeNutrientEntryModal() {
+    els.nutrientEntryModal.classList.remove("open");
+  }
+
+  async function deleteSelectedCustomNutrient() {
+    const selectedName = state.selectedCustomNutrient;
+    const userLib = loadUserNutrients();
+    if (!selectedName || !userLib[selectedName]) {
+      showToast("Bitte zuerst eine eigene Zutat auswählen.", "info");
+      return;
+    }
+    const ok = await confirmAction(`"${selectedName}" wirklich löschen?`);
+    if (!ok) return;
+    delete userLib[selectedName];
+    saveUserNutrients(userLib);
+    state.selectedCustomNutrient = null;
+    refreshLibrary();
+    renderNutrientsPage();
+    showToast("Zutat gelöscht.", "info");
+  }
+
+  function saveNutrientEntryFromModal(event) {
+    event.preventDefault();
+    const name = normalizeText(els.entryNutrientName.value);
+    const alias = normalizeText(els.entryNutrientAlias.value);
+    const kcal = parseFloat(els.entryNutrientKcal.value) || 0;
+    const protein = parseFloat(els.entryNutrientProtein.value) || 0;
+    const carbs = parseFloat(els.entryNutrientCarbs.value) || 0;
+    const fat = parseFloat(els.entryNutrientFat.value) || 0;
+
+    if (!name) {
+      els.nutrientEntryFeedback.textContent = "⚠️ Bitte einen Namen eingeben.";
+      return;
+    }
+
+    const next = loadUserNutrients();
+    const lowerName = name.toLowerCase();
+    const duplicateKey = Object.keys(next).find(k => k.toLowerCase() === lowerName);
+    const isRenameSame = nutrientEntryMode === "edit" && duplicateKey && duplicateKey.toLowerCase() === nutrientEntryOriginalName.toLowerCase();
+    if (duplicateKey && !isRenameSame) {
+      els.nutrientEntryFeedback.textContent = `⚠️ "${name}" existiert bereits.`;
+      return;
+    }
+
+    if (nutrientEntryMode === "edit" && nutrientEntryOriginalName && nutrientEntryOriginalName !== name) {
+      delete next[nutrientEntryOriginalName];
+    }
+
+    next[name] = { kcal, protein, carbs, fat };
+    if (alias && alias !== name) {
+      next[alias] = { kcal, protein, carbs, fat };
+    }
+
+    saveUserNutrients(next);
+    state.selectedCustomNutrient = name;
+    refreshLibrary();
+    renderNutrientsPage();
+    closeNutrientEntryModal();
+    showToast(nutrientEntryMode === "edit" ? "Zutat aktualisiert." : "Zutat hinzugefügt.");
+  }
+
   function renderNutrientsPage() {
     const userLib = loadUserNutrients();
     const userEntries = Object.entries(userLib).sort((a, b) => a[0].localeCompare(b[0], "de"));
     const baseRows = getBaseNutrientRows();
+    const categories = ["alle", ...new Set(baseRows.map(row => row.category))];
+    const activeCategory = categories.includes(state.nutrientCategory) ? state.nutrientCategory : "alle";
+    state.nutrientCategory = activeCategory;
+    const visibleBaseRows = activeCategory === "alle"
+      ? baseRows
+      : baseRows.filter(row => row.category === activeCategory);
 
     els.editor.innerHTML = `
       <div class="form-grid">
-        <div class="hint">📚 Basis-Zutaten stammen aus der Datei naehrwerte.js. Eigene Zutaten werden separat gespeichert und können hier direkt verwaltet werden.</div>
+        <div class="hint">📚 Basis-Zutaten stammen aus naehrwerte.js. Über die Kategorien oben filterst du schnell. Eigene Zutaten verwaltest du rechts direkt im selben Bereich.</div>
 
-        <h2>📚 Basis-Zutaten aus naehrwerte.js (${baseRows.length})</h2>
-        <div class="table-wrapper no-print">
-          <table style="min-width:0; font-size:0.85rem;">
-            <thead><tr><th>Name</th><th>Kategorie</th><th>kcal</th><th>P</th><th>K</th><th>F</th></tr></thead>
-            <tbody>
-              ${baseRows.map(row => `<tr>
-                <td><strong>${escapeHtml(row.name)}</strong></td>
-                <td>${escapeHtml(row.category)}</td>
-                <td>${row.kcal}</td>
-                <td>${row.protein}</td>
-                <td>${row.carbs}</td>
-                <td>${row.fat}</td>
-              </tr>`).join("")}
-            </tbody>
-          </table>
-        </div>
-
-        <h2>🧪 Eigene Zutaten (${userEntries.length})</h2>
-        <div class="table-wrapper no-print">
-          ${userEntries.length === 0
-            ? `<div class="empty" style="padding: 16px;">Noch keine eigenen Zutaten vorhanden.</div>`
-            : `<table style="min-width:0; font-size:0.85rem;">
-                <thead><tr><th>Name</th><th>kcal</th><th>P</th><th>K</th><th>F</th><th>Aktion</th></tr></thead>
+        <div class="nutrient-workspace">
+          <section class="nutrient-card no-print">
+            <h2>📚 Basis-Zutaten (${visibleBaseRows.length} / ${baseRows.length})</h2>
+            <nav class="nutrient-category-nav" aria-label="Nährwert-Kategorien">
+              ${categories.map(category => {
+                const isActive = category === activeCategory;
+                const label = category === "alle" ? "Alle" : category;
+                return `<button class="nutrient-cat-btn ${isActive ? "active" : ""}" data-nutrient-category="${escapeAttr(category)}">${escapeHtml(label)}</button>`;
+              }).join("")}
+            </nav>
+            <div class="table-wrapper">
+              <table style="font-size:0.9rem; min-width:900px;">
+                <thead><tr><th style="width:30%;">Name</th><th style="width:22%;">Kategorie</th><th>kcal</th><th>P</th><th>K</th><th>F</th></tr></thead>
                 <tbody>
-                  ${userEntries.map(([name, val]) => `<tr>
-                    <td><strong>${escapeHtml(name)}</strong></td>
-                    <td>${Number(val?.kcal) || 0}</td>
-                    <td>${Number(val?.protein) || 0}</td>
-                    <td>${Number(val?.carbs) || 0}</td>
-                    <td>${Number(val?.fat) || 0}</td>
-                    <td><button class="small danger" data-remove-user-nutrient-page="${escapeAttr(name)}">Löschen</button></td>
+                  ${visibleBaseRows.map(row => `<tr>
+                    <td><strong>${escapeHtml(row.name)}</strong></td>
+                    <td>${escapeHtml(row.category)}</td>
+                    <td>${row.kcal}</td>
+                    <td>${row.protein}</td>
+                    <td>${row.carbs}</td>
+                    <td>${row.fat}</td>
                   </tr>`).join("")}
                 </tbody>
-              </table>`
-          }
-        </div>
-
-        <h2>➕ Eigene Zutat hinzufügen</h2>
-        <form id="addNutrientPageForm" class="no-print" style="display:grid; gap:10px;">
-          <div class="inline-grid">
-            <label>Name <input type="text" id="newNutrientPageName" placeholder="z.B. Proteinpasta" required /></label>
-            <label>Alias (optional) <input type="text" id="newNutrientPageAlias" placeholder="z.B. High Protein Nudeln" /></label>
-          </div>
-          <div class="inline-grid">
-            <label>kcal <input type="number" id="newNutrientPageKcal" placeholder="0" /></label>
-            <label>Eiweiß (g) <input type="number" step="0.1" id="newNutrientPageProtein" placeholder="0" /></label>
-            <label>Kohlenhydrate (g) <input type="number" step="0.1" id="newNutrientPageCarbs" placeholder="0" /></label>
-            <label>Fett (g) <input type="number" step="0.1" id="newNutrientPageFat" placeholder="0" /></label>
-          </div>
-          <div class="toolbar" style="padding:0; border:0; box-shadow:none; background:transparent;">
-            <div class="toolbar-left">
-              <button type="submit" class="secondary">💾 Speichern</button>
+              </table>
             </div>
-          </div>
-          <p class="muted" id="nutrientPageFeedback"></p>
-        </form>
+          </section>
+
+          <aside class="nutrient-card no-print">
+            <h2>🧪 Eigene Zutaten (${userEntries.length})</h2>
+            <div class="table-wrapper" style="margin-bottom:10px;">
+              ${userEntries.length === 0
+                ? `<div class="empty" style="padding: 14px;">Noch keine eigenen Zutaten vorhanden.</div>`
+                : `<table style="min-width:0; font-size:0.85rem;">
+                    <thead><tr><th>Name</th><th>kcal</th><th>P</th><th>K</th><th>F</th></tr></thead>
+                    <tbody>
+                      ${userEntries.map(([name, val]) => `<tr class="nutrient-row-selectable ${state.selectedCustomNutrient === name ? "active" : ""}" data-custom-nutrient-row="${escapeAttr(name)}">
+                        <td><strong>${escapeHtml(name)}</strong></td>
+                        <td>${Number(val?.kcal) || 0}</td>
+                        <td>${Number(val?.protein) || 0}</td>
+                        <td>${Number(val?.carbs) || 0}</td>
+                        <td>${Number(val?.fat) || 0}</td>
+                      </tr>`).join("")}
+                    </tbody>
+                  </table>`
+              }
+            </div>
+
+            <div class="nutrient-actions-nav">
+              <button id="nutrientCreateBtn">➕ Zutat hinzufügen</button>
+              <button id="nutrientEditBtn" class="secondary">✏️ Ausgewählte bearbeiten</button>
+              <button id="nutrientDeleteBtn" class="danger">🗑️ Ausgewählte löschen</button>
+            </div>
+          </aside>
+        </div>
       </div>
     `;
 
-    els.editor.querySelectorAll('[data-remove-user-nutrient-page]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const name = btn.dataset.removeUserNutrientPage;
-        const ok = await confirmAction(`"${name}" wirklich löschen?`);
-        if (!ok) return;
-        const next = loadUserNutrients();
-        delete next[name];
-        saveUserNutrients(next);
-        refreshLibrary();
+    els.editor.querySelectorAll('[data-nutrient-category]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.nutrientCategory = btn.dataset.nutrientCategory || "alle";
         renderNutrientsPage();
-        showToast("Nährwert entfernt.", "info");
       });
     });
 
-    const pageForm = document.getElementById('addNutrientPageForm');
-    pageForm?.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const name = normalizeText(document.getElementById('newNutrientPageName')?.value);
-      const alias = normalizeText(document.getElementById('newNutrientPageAlias')?.value);
-      const kcal = parseFloat(document.getElementById('newNutrientPageKcal')?.value) || 0;
-      const protein = parseFloat(document.getElementById('newNutrientPageProtein')?.value) || 0;
-      const carbs = parseFloat(document.getElementById('newNutrientPageCarbs')?.value) || 0;
-      const fat = parseFloat(document.getElementById('newNutrientPageFat')?.value) || 0;
-      const feedback = document.getElementById('nutrientPageFeedback');
-
-      if (!name) {
-        if (feedback) feedback.textContent = "⚠️ Bitte einen Namen eingeben.";
-        return;
-      }
-
-      const next = loadUserNutrients();
-      next[name] = { kcal, protein, carbs, fat };
-      if (alias && alias !== name) {
-        next[alias] = { kcal, protein, carbs, fat };
-      }
-      saveUserNutrients(next);
-      refreshLibrary();
-      renderNutrientsPage();
-      showToast(`"${name}" gespeichert.`);
+    els.editor.querySelectorAll('[data-custom-nutrient-row]').forEach(row => {
+      row.addEventListener('click', () => {
+        state.selectedCustomNutrient = row.dataset.customNutrientRow;
+        renderNutrientsPage();
+      });
     });
+
+    document.getElementById('nutrientCreateBtn')?.addEventListener('click', () => openNutrientEntryModal('create'));
+    document.getElementById('nutrientEditBtn')?.addEventListener('click', () => openNutrientEntryModal('edit'));
+    document.getElementById('nutrientDeleteBtn')?.addEventListener('click', deleteSelectedCustomNutrient);
   }
 
   els.addFolderForm.addEventListener("submit", (e) => {
@@ -2475,6 +2680,7 @@
       link.classList.toggle("active", link.dataset.view === view);
     });
     if (view === "recipes") {
+      els.workspaceGrid?.classList.remove("nutrients-layout");
       els.recipeToolbar.style.display = "flex";
       els.recipeListPanel.style.display = "block";
       if (els.mobileNewRecipeBtn?.parentElement) {
@@ -2482,6 +2688,7 @@
       }
       render();
     } else if (view === "nutrients") {
+      els.workspaceGrid?.classList.add("nutrients-layout");
       els.recipeToolbar.style.display = "none";
       els.recipeListPanel.style.display = "none";
       if (els.mobileNewRecipeBtn?.parentElement) {
@@ -2595,12 +2802,20 @@
   els.closeCookModeModal.addEventListener("click", closeCookMode);
   els.cookModeModal.addEventListener("keydown", (e) => trapModalFocus(e, els.cookModeModal));
 
+  els.closeNutrientEntryModal.addEventListener("click", closeNutrientEntryModal);
+  els.nutrientEntryModal.addEventListener("click", (e) => {
+    if (e.target === els.nutrientEntryModal) closeNutrientEntryModal();
+  });
+  els.nutrientEntryModal.addEventListener("keydown", (e) => trapModalFocus(e, els.nutrientEntryModal));
+  els.nutrientEntryForm.addEventListener("submit", saveNutrientEntryFromModal);
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (els.nutrientModal.classList.contains("open")) closeNutrientModal();
     if (els.folderModal.classList.contains("open")) closeFolderModal();
     if (els.confirmModal.classList.contains("open")) els.confirmCancelBtn.click();
     if (els.cookModeModal.classList.contains("open")) closeCookMode();
+    if (els.nutrientEntryModal.classList.contains("open")) closeNutrientEntryModal();
   });
 
   // Suche
