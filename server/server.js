@@ -14,7 +14,8 @@ const dbPath = process.env.DB_PATH || join(rootDir, 'database.sqlite');
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+app.use(cors({ origin: allowedOrigin }));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(rootDir));
 
@@ -35,6 +36,7 @@ db.exec(`
     cookingTime TEXT DEFAULT '',
     difficulty TEXT DEFAULT 'mittel',
     tags TEXT DEFAULT '',
+    folder_id TEXT DEFAULT NULL,
     ingredients_json TEXT NOT NULL DEFAULT '[]',
     steps_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,7 +44,44 @@ db.exec(`
   );
 `);
 
+const columns = db.prepare("PRAGMA table_info(recipes)").all();
+if (!columns.some((col) => col.name === 'folder_id')) {
+  db.exec("ALTER TABLE recipes ADD COLUMN folder_id TEXT DEFAULT NULL");
+}
+
 const recipeColumns = ['name', 'category', 'portions', 'prepTime', 'cookingTime', 'difficulty', 'tags', 'ingredients', 'steps'];
+
+function clampString(value, maxLength) {
+  return String(value || '').slice(0, maxLength);
+}
+
+function normalizeIngredient(input) {
+  return {
+    name: clampString(input?.name, 200),
+    amount: Number(input?.amount) || 0,
+    unit: clampString(input?.unit, 20),
+    nutrientKey: clampString(input?.nutrientKey, 120),
+    kcal: Number(input?.kcal) || 0,
+    protein: Number(input?.protein) || 0,
+    carbs: Number(input?.carbs) || 0,
+    fat: Number(input?.fat) || 0
+  };
+}
+
+function validatePayload(input) {
+  if (!input || typeof input !== 'object') {
+    return { ok: false, error: 'Ungueltige Nutzdaten' };
+  }
+  const ingredients = Array.isArray(input.ingredients) ? input.ingredients : [];
+  const steps = Array.isArray(input.steps) ? input.steps : [];
+  if (ingredients.length > 500) {
+    return { ok: false, error: 'Zu viele Zutaten (max. 500)' };
+  }
+  if (steps.length > 300) {
+    return { ok: false, error: 'Zu viele Schritte (max. 300)' };
+  }
+  return { ok: true };
+}
 
 function serializeRecipe(row) {
   return {
@@ -54,6 +93,7 @@ function serializeRecipe(row) {
     cookingTime: row.cookingTime,
     difficulty: row.difficulty,
     tags: row.tags,
+    folderId: row.folder_id,
     ingredients: JSON.parse(row.ingredients_json || '[]'),
     steps: JSON.parse(row.steps_json || '[]'),
     createdAt: row.created_at,
@@ -62,17 +102,20 @@ function serializeRecipe(row) {
 }
 
 function normalizeRecipe(input) {
+  const ingredients = Array.isArray(input.ingredients) ? input.ingredients : [];
+  const steps = Array.isArray(input.steps) ? input.steps : [];
   return {
     id: String(input.id || ''),
-    name: String(input.name || 'Neues Rezept'),
-    category: String(input.category || ''),
-    portions: Number(input.portions) || 4,
-    prepTime: String(input.prepTime || ''),
-    cookingTime: String(input.cookingTime || ''),
-    difficulty: String(input.difficulty || 'mittel'),
-    tags: String(input.tags || ''),
-    ingredients: Array.isArray(input.ingredients) ? input.ingredients : [],
-    steps: Array.isArray(input.steps) ? input.steps : []
+    name: clampString(input.name || 'Neues Rezept', 256),
+    category: clampString(input.category || '', 100),
+    portions: Math.max(1, Math.min(999, Number(input.portions) || 4)),
+    prepTime: clampString(input.prepTime || '', 100),
+    cookingTime: clampString(input.cookingTime || '', 100),
+    difficulty: clampString(input.difficulty || 'mittel', 20),
+    tags: clampString(input.tags || '', 300),
+    folderId: input.folderId ? clampString(input.folderId, 80) : null,
+    ingredients: ingredients.map(normalizeIngredient),
+    steps: steps.map((step) => clampString(step, 2000))
   };
 }
 
@@ -86,6 +129,10 @@ app.get('/api/recipes', (req, res) => {
 });
 
 app.post('/api/recipes', (req, res) => {
+  const validation = validatePayload(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: validation.error });
+  }
   const recipe = normalizeRecipe(req.body);
   recipe.id = recipe.id || crypto.randomUUID();
 
@@ -93,10 +140,10 @@ app.post('/api/recipes', (req, res) => {
   const stmt = db.prepare(`
     INSERT INTO recipes (
       id, name, category, portions, prepTime, cookingTime, difficulty, tags,
-      ingredients_json, steps_json, created_at, updated_at
+      folder_id, ingredients_json, steps_json, created_at, updated_at
     ) VALUES (
       @id, @name, @category, @portions, @prepTime, @cookingTime, @difficulty, @tags,
-      @ingredients, @steps, @created_at, @updated_at
+      @folder_id, @ingredients, @steps, @created_at, @updated_at
     )
   `);
 
@@ -109,6 +156,7 @@ app.post('/api/recipes', (req, res) => {
     cookingTime: recipe.cookingTime,
     difficulty: recipe.difficulty,
     tags: recipe.tags,
+    folder_id: recipe.folderId,
     ingredients: JSON.stringify(recipe.ingredients),
     steps: JSON.stringify(recipe.steps),
     created_at: now,
@@ -126,6 +174,11 @@ app.put('/api/recipes/:id', (req, res) => {
     return res.status(404).json({ error: 'Rezept nicht gefunden' });
   }
 
+  const validation = validatePayload(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: validation.error });
+  }
+
   const recipe = normalizeRecipe({ ...existing, ...req.body, id });
   const now = new Date().toISOString();
 
@@ -139,6 +192,7 @@ app.put('/api/recipes/:id', (req, res) => {
       cookingTime = @cookingTime,
       difficulty = @difficulty,
       tags = @tags,
+      folder_id = @folder_id,
       ingredients_json = @ingredients,
       steps_json = @steps,
       updated_at = @updated_at
@@ -154,6 +208,7 @@ app.put('/api/recipes/:id', (req, res) => {
     cookingTime: recipe.cookingTime,
     difficulty: recipe.difficulty,
     tags: recipe.tags,
+    folder_id: recipe.folderId,
     ingredients: JSON.stringify(recipe.ingredients),
     steps: JSON.stringify(recipe.steps),
     updated_at: now

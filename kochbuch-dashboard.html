@@ -159,6 +159,10 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 14px rgba(211,84,0,0.25);
     }
+    button:focus-visible, .button-link:focus-visible, a:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
     button.secondary { background: #5f6368; }
     button.secondary:hover { background: #3c4043; box-shadow: 0 6px 14px rgba(0,0,0,0.15); }
     button.danger { background: var(--red); }
@@ -611,9 +615,9 @@
 
   <!-- ===== MODAL FÜR NÄHRWERTVERWALTUNG ===== -->
   <div class="modal-overlay" id="nutrientModal">
-    <div class="modal">
-      <button class="close-btn" id="closeNutrientModal">✕</button>
-      <h2>📊 Nährwertbibliothek verwalten</h2>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="nutrientModalTitle">
+      <button class="close-btn" id="closeNutrientModal" aria-label="Nährwert-Dialog schließen">✕</button>
+      <h2 id="nutrientModalTitle">📊 Nährwertbibliothek verwalten</h2>
       <p class="muted">Füge eigene Zutaten hinzu oder bearbeite bestehende.</p>
       <hr />
       <div id="nutrientList" style="max-height: 300px; overflow-y: auto; margin: 12px 0;"></div>
@@ -638,9 +642,9 @@
 
   <!-- ===== MODAL FÜR ORDNER ===== -->
   <div class="modal-overlay" id="folderModal">
-    <div class="modal">
-      <button class="close-btn" id="closeFolderModal">✕</button>
-      <h2>📁 Ordner verwalten</h2>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+      <button class="close-btn" id="closeFolderModal" aria-label="Ordner-Dialog schließen">✕</button>
+      <h2 id="folderModalTitle">📁 Ordner verwalten</h2>
       <p class="muted">Erstelle einen neuen Ordner oder benenne/lösche bestehende.</p>
       <hr />
       <div id="folderManageList" style="max-height: 200px; overflow-y: auto; margin: 12px 0;"></div>
@@ -765,6 +769,11 @@
   //  3.  STATE & HILFSFUNKTIONEN
   // ============================================================
   const STORAGE_KEY = "digitales-kochbuch-v1";
+  const API_BASE = "/api";
+
+  let backendMode = false;
+  let syncTimer = null;
+  let syncQueue = Promise.resolve();
 
   let state = {
     recipes: [],
@@ -812,6 +821,95 @@
 
   function uid() { return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8); }
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+  async function apiRequest(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options
+    });
+    if (!response.ok) {
+      let message = `API-Fehler ${response.status}`;
+      try {
+        const payload = await response.json();
+        if (payload?.error) message = payload.error;
+      } catch {
+        // ignore json parse errors for non-json responses
+      }
+      throw new Error(message);
+    }
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  function normalizeRecipeForState(recipe) {
+    return {
+      ...recipe,
+      id: String(recipe.id || uid()),
+      name: String(recipe.name || "Neues Rezept"),
+      category: String(recipe.category || "Hauptgericht"),
+      portions: Math.max(1, Number(recipe.portions) || 1),
+      prepTime: String(recipe.prepTime || ""),
+      cookingTime: String(recipe.cookingTime || ""),
+      difficulty: String(recipe.difficulty || "mittel"),
+      tags: String(recipe.tags || ""),
+      folderId: recipe.folderId || null,
+      ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : [createIngredient()],
+      steps: Array.isArray(recipe.steps) && recipe.steps.length ? recipe.steps : [""]
+    };
+  }
+
+  function writeLocalState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      recipes: state.recipes,
+      selectedId: state.selectedId,
+      selectedFolderId: state.selectedFolderId
+    }));
+  }
+
+  async function syncAllRecipesToApi() {
+    await apiRequest('/recipes/reset', { method: 'POST' });
+    for (const recipe of state.recipes) {
+      await apiRequest('/recipes', {
+        method: 'POST',
+        body: JSON.stringify(recipe)
+      });
+    }
+  }
+
+  function scheduleBackendSync() {
+    if (!backendMode) return;
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      syncQueue = syncQueue
+        .then(() => syncAllRecipesToApi())
+        .catch((error) => {
+          console.warn("Backend-Sync fehlgeschlagen:", error);
+          backendMode = false;
+          els.refreshFeedback.textContent = "⚠️ Offline-Modus";
+          els.refreshFeedback.classList.add('show');
+        });
+    }, 350);
+  }
+
+  function firstFocusable(modalOverlay) {
+    return modalOverlay.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+
+  function trapModalFocus(event, modalOverlay) {
+    if (event.key !== 'Tab') return;
+    const focusable = [...modalOverlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -921,11 +1019,27 @@
   // ============================================================
   //  5.  REZEPT-FUNKTIONEN
   // ============================================================
-  function loadRecipes() {
+  async function loadRecipes() {
+    try {
+      const remoteRecipes = await apiRequest('/recipes');
+      if (Array.isArray(remoteRecipes)) {
+        backendMode = true;
+        state.recipes = remoteRecipes.map(normalizeRecipeForState);
+        state.selectedId = state.recipes[0]?.id || null;
+        state.selectedFolderId = null;
+        if (state.recipes.length === 0) createRecipe();
+        writeLocalState();
+        render();
+        return;
+      }
+    } catch {
+      backendMode = false;
+    }
+
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
       if (saved && Array.isArray(saved.recipes)) {
-        state.recipes = saved.recipes;
+        state.recipes = saved.recipes.map(normalizeRecipeForState);
         state.selectedId = saved.selectedId || state.recipes[0]?.id || null;
         state.selectedFolderId = saved.selectedFolderId !== undefined ? saved.selectedFolderId : null;
       } else {
@@ -944,11 +1058,8 @@
   }
 
   function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      recipes: state.recipes,
-      selectedId: state.selectedId,
-      selectedFolderId: state.selectedFolderId
-    }));
+    writeLocalState();
+    scheduleBackendSync();
   }
 
   function createRecipe(folderId = null) {
@@ -1519,6 +1630,7 @@
   function openNutrientModal() {
     els.nutrientModal.classList.add("open");
     renderNutrientList();
+    firstFocusable(els.nutrientModal)?.focus();
   }
 
   function closeNutrientModal() {
@@ -1615,6 +1727,7 @@
   function openFolderModal() {
     els.folderModal.classList.add("open");
     renderFolderManageList();
+    firstFocusable(els.folderModal)?.focus();
   }
 
   function closeFolderModal() {
@@ -1700,9 +1813,9 @@
   // ============================================================
   //  12. AKTUALISIEREN (Refresh)
   // ============================================================
-  function refreshData() {
+  async function refreshData() {
     refreshLibrary();
-    loadRecipes();
+    await loadRecipes();
     if (state.view === "nutrients") {
       switchView("nutrients");
     } else {
@@ -1775,18 +1888,30 @@
   els.printNavBtn.addEventListener("click", () => window.print());
 
   // Refresh-Button
-  els.refreshBtn.addEventListener("click", refreshData);
+  els.refreshBtn.addEventListener("click", () => {
+    refreshData().catch((err) => {
+      console.warn("Refresh fehlgeschlagen:", err);
+    });
+  });
 
   // Modal schließen (Nährstoffe)
   els.closeNutrientModal.addEventListener("click", closeNutrientModal);
   els.nutrientModal.addEventListener("click", (e) => {
     if (e.target === els.nutrientModal) closeNutrientModal();
   });
+  els.nutrientModal.addEventListener("keydown", (e) => trapModalFocus(e, els.nutrientModal));
 
   // Modal schließen (Ordner)
   els.closeFolderModal.addEventListener("click", closeFolderModal);
   els.folderModal.addEventListener("click", (e) => {
     if (e.target === els.folderModal) closeFolderModal();
+  });
+  els.folderModal.addEventListener("keydown", (e) => trapModalFocus(e, els.folderModal));
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (els.nutrientModal.classList.contains("open")) closeNutrientModal();
+    if (els.folderModal.classList.contains("open")) closeFolderModal();
   });
 
   // Suche
@@ -1798,8 +1923,15 @@
   // ============================================================
   //  15. START
   // ============================================================
-  loadRecipes();
-  switchView("recipes");
+  async function initApp() {
+    await loadRecipes();
+    switchView("recipes");
+  }
+
+  initApp().catch((err) => {
+    console.warn("Initialisierung fehlgeschlagen:", err);
+    switchView("recipes");
+  });
 </script>
 </body>
 </html>
