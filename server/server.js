@@ -62,6 +62,60 @@ if (!columns.some((col) => col.name === 'folder_id')) {
 
 const recipeColumns = ['name', 'category', 'portions', 'prepTime', 'cookingTime', 'difficulty', 'tags', 'ingredients', 'steps'];
 
+const authPassword = String(process.env.KOCHBUCH_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
+const authSessionTtlHours = Math.max(1, Number(process.env.AUTH_SESSION_TTL_HOURS) || 24);
+const authSessions = new Map();
+
+function timingSafeTextEquals(a, b) {
+  const left = Buffer.from(String(a || ''), 'utf8');
+  const right = Buffer.from(String(b || ''), 'utf8');
+  if (left.length !== right.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(left, right);
+}
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [token, expiresAt] of authSessions.entries()) {
+    if (expiresAt <= now) {
+      authSessions.delete(token);
+    }
+  }
+}
+
+function parseBearerToken(req) {
+  const header = String(req.headers.authorization || '');
+  if (!header.toLowerCase().startsWith('bearer ')) {
+    return '';
+  }
+  return header.slice(7).trim();
+}
+
+function isTokenValid(token) {
+  cleanupExpiredSessions();
+  if (!token) return false;
+  const expiresAt = authSessions.get(token);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    authSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function requireAuth(req, res, next) {
+  if (!authPassword) {
+    return res.status(503).json({ error: 'Login ist nicht konfiguriert (KOCHBUCH_ADMIN_PASSWORD fehlt).' });
+  }
+
+  const token = parseBearerToken(req);
+  if (!isTokenValid(token)) {
+    return res.status(401).json({ error: 'Nicht autorisiert. Bitte einloggen.' });
+  }
+
+  next();
+}
+
 function clampString(value, maxLength) {
   return String(value || '').slice(0, maxLength);
 }
@@ -145,12 +199,52 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, database: dbPath });
 });
 
+app.get('/api/auth/status', (req, res) => {
+  const token = parseBearerToken(req);
+  res.json({
+    authConfigured: !!authPassword,
+    authenticated: isTokenValid(token)
+  });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  if (!authPassword) {
+    return res.status(503).json({ error: 'Login ist nicht konfiguriert (KOCHBUCH_ADMIN_PASSWORD fehlt).' });
+  }
+
+  const password = String(req.body?.password || '');
+  if (!password) {
+    return res.status(400).json({ error: 'Passwort ist erforderlich.' });
+  }
+
+  if (!timingSafeTextEquals(password, authPassword)) {
+    return res.status(401).json({ error: 'Falsches Passwort.' });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + authSessionTtlHours * 60 * 60 * 1000;
+  authSessions.set(token, expiresAt);
+
+  res.json({
+    token,
+    expiresAt: new Date(expiresAt).toISOString()
+  });
+});
+
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+  const token = parseBearerToken(req);
+  if (token) {
+    authSessions.delete(token);
+  }
+  res.json({ ok: true });
+});
+
 app.get('/api/recipes', (req, res) => {
   const rows = db.prepare('SELECT * FROM recipes ORDER BY updated_at DESC').all();
   res.json(rows.map(serializeRecipe));
 });
 
-app.post('/api/recipes', (req, res) => {
+app.post('/api/recipes', requireAuth, (req, res) => {
   const validation = validatePayload(req.body);
   if (!validation.ok) {
     return res.status(400).json({ error: validation.error });
@@ -188,7 +282,7 @@ app.post('/api/recipes', (req, res) => {
   res.status(201).json({ ...recipe, createdAt: now, updatedAt: now });
 });
 
-app.put('/api/recipes/:id', (req, res) => {
+app.put('/api/recipes/:id', requireAuth, (req, res) => {
   const { id } = req.params;
   const existing = db.prepare('SELECT * FROM recipes WHERE id = ?').get(id);
 
@@ -239,7 +333,7 @@ app.put('/api/recipes/:id', (req, res) => {
   res.json({ ...recipe, updatedAt: now });
 });
 
-app.delete('/api/recipes/:id', (req, res) => {
+app.delete('/api/recipes/:id', requireAuth, (req, res) => {
   const { id } = req.params;
   const info = db.prepare('DELETE FROM recipes WHERE id = ?').run(id);
 
@@ -250,7 +344,7 @@ app.delete('/api/recipes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/recipes/reset', (req, res) => {
+app.post('/api/recipes/reset', requireAuth, (req, res) => {
   db.prepare('DELETE FROM recipes').run();
   res.json({ ok: true });
 });
@@ -267,7 +361,7 @@ app.get('/api/nutrients', (req, res) => {
   })));
 });
 
-app.post('/api/nutrients', (req, res) => {
+app.post('/api/nutrients', requireAuth, (req, res) => {
   const nutrient = normalizeNutrient(req.body);
   if (!nutrient.name) {
     return res.status(400).json({ error: 'Name ist erforderlich' });
@@ -295,7 +389,7 @@ app.post('/api/nutrients', (req, res) => {
   res.status(201).json({ ...nutrient, updatedAt: now });
 });
 
-app.delete('/api/nutrients/:name', (req, res) => {
+app.delete('/api/nutrients/:name', requireAuth, (req, res) => {
   const name = String(req.params.name || '').trim();
   if (!name) {
     return res.status(400).json({ error: 'Name ist erforderlich' });
@@ -307,7 +401,7 @@ app.delete('/api/nutrients/:name', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/nutrients/reset', (req, res) => {
+app.post('/api/nutrients/reset', requireAuth, (req, res) => {
   db.prepare('DELETE FROM nutrient_entries').run();
   res.json({ ok: true });
 });
@@ -319,4 +413,7 @@ app.get('*', (req, res) => {
 app.listen(port, '0.0.0.0', () => {
   console.log(`Andys Genussreise läuft auf http://localhost:${port}`);
   console.log(`SQLite Datenbank: ${dbPath}`);
+  if (!authPassword) {
+    console.warn('WARNUNG: KOCHBUCH_ADMIN_PASSWORD ist nicht gesetzt. Bearbeiten ist serverseitig gesperrt.');
+  }
 });

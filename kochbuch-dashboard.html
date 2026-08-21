@@ -921,6 +921,21 @@
       justify-content: center;
     }
 
+    .mobile-actions.nutrient-actions-mode {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 10px 12px;
+    }
+    .mobile-actions.nutrient-actions-mode button {
+      flex: 0 0 auto;
+      min-width: 150px;
+      padding: 10px 14px;
+      font-size: 0.84rem;
+    }
+
     .cook-hero {
       background: linear-gradient(140deg, #fff8ec, #fff3e3);
       border: 1px solid #efd8bd;
@@ -1023,6 +1038,9 @@
   <a href="#" class="active" data-view="recipes">📖 Rezepte</a>
   <a href="#" data-view="nutrients">📊 Nährwerte verwalten</a>
   <span class="spacer"></span>
+  <span id="authState" class="muted">🔓 Nur Lesen</span>
+  <button id="openLoginBtn" class="ghost">🔐 Login</button>
+  <button id="logoutBtn" class="ghost hidden">🚪 Logout</button>
   <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
   <button id="exportNavBtn" class="ghost">⬇️ Export</button>
   <label class="button-link ghost" for="importNavFile">⬆️ Import
@@ -1130,6 +1148,21 @@
           <button id="confirmOkBtn" class="danger">Bestätigen</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle" style="max-width: 420px;">
+      <button class="close-btn" id="closeLoginModal" aria-label="Login schließen">✕</button>
+      <h2 id="loginModalTitle">🔐 Bearbeiten freischalten</h2>
+      <p class="muted">Zum Ändern, Importieren oder Löschen ist ein Passwort nötig.</p>
+      <form id="loginForm" style="display:grid; gap:10px; margin-top:10px;">
+        <label>Passwort
+          <input type="password" id="loginPassword" autocomplete="current-password" required />
+        </label>
+        <p id="loginFeedback" class="muted"></p>
+        <button type="submit">Anmelden</button>
+      </form>
     </div>
   </div>
 
@@ -1268,6 +1301,7 @@
   }
 
   function createFolder(name) {
+    if (!ensureEditAccess()) return loadFolders();
     const folders = loadFolders();
     const newFolder = { id: "f_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,6), name: name.trim() };
     folders.push(newFolder);
@@ -1276,6 +1310,7 @@
   }
 
   function deleteFolder(id) {
+    if (!ensureEditAccess()) return loadFolders();
     let folders = loadFolders();
     folders = folders.filter(f => f.id !== id);
     saveFolders(folders);
@@ -1287,6 +1322,7 @@
   }
 
   function renameFolder(id, newName) {
+    if (!ensureEditAccess()) return loadFolders();
     const folders = loadFolders();
     const folder = folders.find(f => f.id === id);
     if (folder) folder.name = newName.trim();
@@ -1310,6 +1346,7 @@
   // ============================================================
   const STORAGE_KEY = "digitales-kochbuch-v1";
   const PENDING_RECIPE_SYNC_KEY = "digitales-kochbuch-pending-recipe-sync";
+  const AUTH_TOKEN_KEY = "digitales-kochbuch-auth-token";
   const API_BASE = "/api";
 
   let backendMode = false;
@@ -1319,6 +1356,7 @@
   let nutrientSyncQueue = Promise.resolve();
   let nutrientEntryMode = "create";
   let nutrientEntryOriginalName = "";
+  let authConfigured = false;
 
   let state = {
     recipes: [],
@@ -1360,6 +1398,9 @@
     exportNavBtn: document.getElementById("exportNavBtn"),
     importNavFile: document.getElementById("importNavFile"),
     printNavBtn: document.getElementById("printNavBtn"),
+    authState: document.getElementById("authState"),
+    openLoginBtn: document.getElementById("openLoginBtn"),
+    logoutBtn: document.getElementById("logoutBtn"),
     navLinks: document.querySelectorAll('.nav-bar [data-view]'),
     folderModal: document.getElementById("folderModal"),
     closeFolderModal: document.getElementById("closeFolderModal"),
@@ -1375,6 +1416,11 @@
     confirmModalMessage: document.getElementById("confirmModalMessage"),
     confirmCancelBtn: document.getElementById("confirmCancelBtn"),
     confirmOkBtn: document.getElementById("confirmOkBtn"),
+    loginModal: document.getElementById("loginModal"),
+    closeLoginModal: document.getElementById("closeLoginModal"),
+    loginForm: document.getElementById("loginForm"),
+    loginPassword: document.getElementById("loginPassword"),
+    loginFeedback: document.getElementById("loginFeedback"),
     cookModeModal: document.getElementById("cookModeModal"),
     cookModeContent: document.getElementById("cookModeContent"),
     closeCookModeModal: document.getElementById("closeCookModeModal"),
@@ -1405,6 +1451,7 @@
     if (!els.mobileActions) return;
 
     if (state.view === "nutrients") {
+      els.mobileActions.classList.add("nutrient-actions-mode");
       const hasSelection = !!options.hasSelection;
       const canDeleteSelection = !!options.canDeleteSelection;
       els.mobileActions.innerHTML = `
@@ -1417,11 +1464,22 @@
       els.nutrientEditBottomBtn = document.getElementById("nutrientEditBottomBtn");
       els.nutrientDeleteBottomBtn = document.getElementById("nutrientDeleteBottomBtn");
 
-      els.nutrientCreateBottomBtn?.addEventListener("click", () => openNutrientEntryModal("create"));
-      els.nutrientEditBottomBtn?.addEventListener("click", () => openNutrientEntryModal("edit"));
-      els.nutrientDeleteBottomBtn?.addEventListener("click", deleteSelectedCustomNutrient);
+      els.nutrientCreateBottomBtn?.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
+        openNutrientEntryModal("create");
+      });
+      els.nutrientEditBottomBtn?.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
+        openNutrientEntryModal("edit");
+      });
+      els.nutrientDeleteBottomBtn?.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
+        deleteSelectedCustomNutrient();
+      });
       return;
     }
+
+    els.mobileActions.classList.remove("nutrient-actions-mode");
 
     els.mobileActions.innerHTML = `
       <button id="mobileNewRecipeBtn">➕ Neu</button>
@@ -1440,6 +1498,7 @@
       showToast("Neues Rezept angelegt.");
     });
     els.mobileAddIngredientBtn?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       const recipe = selectedRecipe();
       if (!recipe) {
         showToast("Bitte zuerst ein Rezept auswählen.", "info");
@@ -1451,6 +1510,7 @@
       showToast("Zutat hinzugefügt.");
     });
     els.mobileAddStepBtn?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       const recipe = selectedRecipe();
       if (!recipe) {
         showToast("Bitte zuerst ein Rezept auswählen.", "info");
@@ -1467,10 +1527,137 @@
   function uid() { return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8); }
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
+  function getAuthToken() {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+  }
+
+  function setAuthToken(token) {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  }
+
+  function hasAuthToken() {
+    return !!normalizeText(getAuthToken());
+  }
+
+  function canEditData() {
+    if (!backendMode) return true;
+    if (!authConfigured) return false;
+    return hasAuthToken();
+  }
+
+  function updateAuthUi() {
+    if (!els.authState || !els.openLoginBtn || !els.logoutBtn) return;
+
+    if (!backendMode) {
+      els.authState.textContent = "💾 Lokal-Modus";
+      els.openLoginBtn.classList.add("hidden");
+      els.logoutBtn.classList.add("hidden");
+      return;
+    }
+
+    if (!authConfigured) {
+      els.authState.textContent = "⚠️ Login nicht konfiguriert";
+      els.openLoginBtn.classList.add("hidden");
+      els.logoutBtn.classList.add("hidden");
+      return;
+    }
+
+    if (hasAuthToken()) {
+      els.authState.textContent = "🔐 Bearbeiten aktiv";
+      els.openLoginBtn.classList.add("hidden");
+      els.logoutBtn.classList.remove("hidden");
+      return;
+    }
+
+    els.authState.textContent = "🔓 Nur Lesen";
+    els.openLoginBtn.classList.remove("hidden");
+    els.logoutBtn.classList.add("hidden");
+  }
+
+  function openLoginModal() {
+    if (!backendMode) {
+      showToast("Backend nicht erreichbar. Login derzeit nicht verfügbar.", "info");
+      return;
+    }
+    if (!authConfigured) {
+      showToast("Server-Login ist nicht konfiguriert.", "error");
+      return;
+    }
+    els.loginFeedback.textContent = "";
+    els.loginPassword.value = "";
+    els.loginModal.classList.add("open");
+    firstFocusable(els.loginModal)?.focus();
+  }
+
+  function closeLoginModal() {
+    els.loginModal.classList.remove("open");
+  }
+
+  function ensureEditAccess() {
+    if (canEditData()) return true;
+    showToast("Zum Bearbeiten bitte einloggen.", "info");
+    openLoginModal();
+    return false;
+  }
+
+  function handleUnauthorized(message = "Session abgelaufen. Bitte erneut einloggen.") {
+    setAuthToken("");
+    updateAuthUi();
+    showToast(message, "info");
+  }
+
+  async function refreshAuthStatus() {
+    if (!backendMode) {
+      authConfigured = false;
+      updateAuthUi();
+      return;
+    }
+
+    try {
+      const status = await apiRequest('/auth/status');
+      authConfigured = !!status?.authConfigured;
+      if (!status?.authenticated && hasAuthToken()) {
+        setAuthToken("");
+      }
+    } catch {
+      authConfigured = false;
+      setAuthToken("");
+    }
+
+    updateAuthUi();
+  }
+
+  async function logout() {
+    try {
+      if (hasAuthToken()) {
+        await apiRequest('/auth/logout', { method: 'POST' });
+      }
+    } catch {
+      // ignore logout errors; local token will still be cleared
+    }
+    setAuthToken("");
+    updateAuthUi();
+    render();
+    showToast("Abgemeldet.", "info");
+  }
+
   async function apiRequest(path, options = {}) {
+    const { skipAuth = false, ...fetchOptions } = options;
+    const headers = { "Content-Type": "application/json", ...(fetchOptions.headers || {}) };
+    if (!skipAuth) {
+      const token = getAuthToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    }
+
     const response = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-      ...options
+      ...fetchOptions,
+      headers
     });
     if (!response.ok) {
       let message = `API-Fehler ${response.status}`;
@@ -1480,7 +1667,9 @@
       } catch {
         // ignore json parse errors for non-json responses
       }
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
     }
     const text = await response.text();
     return text ? JSON.parse(text) : null;
@@ -1521,6 +1710,7 @@
   }
 
   async function syncAllRecipesToApi() {
+    if (!canEditData()) return;
     await apiRequest('/recipes/reset', { method: 'POST' });
     for (const recipe of state.recipes) {
       await apiRequest('/recipes', {
@@ -1550,7 +1740,7 @@
   }
 
   async function syncUserNutrientsToApi() {
-    if (!backendMode) return;
+    if (!backendMode || !canEditData()) return;
     await apiRequest('/nutrients/reset', { method: 'POST' });
     const entries = Object.entries(loadUserNutrients());
     for (const [name, val] of entries) {
@@ -1568,27 +1758,36 @@
   }
 
   function scheduleBackendSync() {
-    if (!backendMode) return;
+    if (!backendMode || !canEditData()) return;
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       syncQueue = syncQueue
         .then(() => syncAllRecipesToApi())
         .catch((error) => {
+          if (error?.status === 401 || error?.status === 403) {
+            handleUnauthorized("Login erforderlich. Änderungen wurden nicht synchronisiert.");
+            return;
+          }
           console.warn("Backend-Sync fehlgeschlagen:", error);
           backendMode = false;
           els.refreshFeedback.textContent = "⚠️ Offline-Modus";
           els.refreshFeedback.classList.add('show');
+          updateAuthUi();
         });
     }, 350);
   }
 
   function scheduleNutrientSync() {
-    if (!backendMode) return;
+    if (!backendMode || !canEditData()) return;
     if (nutrientSyncTimer) clearTimeout(nutrientSyncTimer);
     nutrientSyncTimer = setTimeout(() => {
       nutrientSyncQueue = nutrientSyncQueue
         .then(() => syncUserNutrientsToApi())
         .catch((error) => {
+          if (error?.status === 401 || error?.status === 403) {
+            handleUnauthorized("Login erforderlich. Nährwertänderungen wurden nicht synchronisiert.");
+            return;
+          }
           console.warn("Nährwert-Sync fehlgeschlagen:", error);
         });
     }, 350);
@@ -1890,6 +2089,7 @@
       const remoteRecipes = await apiRequest('/recipes');
       if (Array.isArray(remoteRecipes)) {
         backendMode = true;
+        await refreshAuthStatus();
         try {
           await loadUserNutrientsFromApi();
         } catch (error) {
@@ -1899,7 +2099,7 @@
         const localSnapshot = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
         const hasLocalSnapshot = localSnapshot && Array.isArray(localSnapshot.recipes);
 
-        if (hasPendingRecipeSync() && hasLocalSnapshot) {
+        if (hasPendingRecipeSync() && hasLocalSnapshot && canEditData()) {
           state.recipes = localSnapshot.recipes.map(normalizeRecipeForState);
           state.selectedId = localSnapshot.selectedId || state.recipes[0]?.id || null;
           state.selectedFolderId = localSnapshot.selectedFolderId !== undefined ? localSnapshot.selectedFolderId : null;
@@ -1908,10 +2108,15 @@
           syncQueue = syncQueue
             .then(() => syncAllRecipesToApi())
             .catch((error) => {
+              if (error?.status === 401 || error?.status === 403) {
+                handleUnauthorized("Login erforderlich. Lokale Änderungen wurden nicht übernommen.");
+                return;
+              }
               console.warn("Backend-Sync beim Start fehlgeschlagen:", error);
               backendMode = false;
               els.refreshFeedback.textContent = "⚠️ Offline-Modus";
               els.refreshFeedback.classList.add('show');
+              updateAuthUi();
             });
         } else {
           state.recipes = remoteRecipes.map(normalizeRecipeForState);
@@ -1919,13 +2124,15 @@
           state.selectedFolderId = null;
         }
 
-        if (state.recipes.length === 0) createRecipe();
+        if (state.recipes.length === 0 && canEditData()) createRecipe();
         writeLocalState();
         render();
         return;
       }
     } catch {
       backendMode = false;
+      authConfigured = false;
+      updateAuthUi();
     }
 
     try {
@@ -1939,7 +2146,7 @@
         state.recipes = [];
         state.selectedId = null;
         state.selectedFolderId = null;
-        if (state.recipes.length === 0) createRecipe();
+        if (state.recipes.length === 0 && canEditData()) createRecipe();
         return;
       }
     } catch {
@@ -1953,10 +2160,13 @@
   function save() {
     writeLocalState();
     setPendingRecipeSync(true);
-    scheduleBackendSync();
+    if (canEditData()) {
+      scheduleBackendSync();
+    }
   }
 
   function createRecipe(folderId = null) {
+    if (!ensureEditAccess()) return;
     const recipe = {
       id: uid(),
       name: "Neues Rezept",
@@ -1978,6 +2188,7 @@
   }
 
   function deleteRecipe(recipe) {
+    if (!ensureEditAccess()) return;
     state.recipes = state.recipes.filter(r => r.id !== recipe.id);
     state.selectedId = state.recipes[0]?.id || null;
     save();
@@ -1985,6 +2196,7 @@
   }
 
   function duplicateRecipe(recipe) {
+    if (!ensureEditAccess()) return;
     const copy = clone(recipe);
     copy.id = uid();
     copy.name = recipe.name + " Kopie";
@@ -2139,6 +2351,7 @@
 
   function renderEditor() {
     const recipe = selectedRecipe();
+    const readOnly = !canEditData();
 
     if (!recipe) {
       els.editor.innerHTML = `
@@ -2169,6 +2382,7 @@
           💡 Nährwerte werden automatisch berechnet, sobald ein bekannter Zutatennamen eingegeben wird.
           Fehlende Werte kannst du manuell pro 100 g/ml ergänzen.
         </div>
+        ${readOnly ? `<div class="hint no-print">🔒 Nur Leseansicht: Zum Bearbeiten bitte oben auf "Login" klicken.</div>` : ""}
 
         <div class="inline-grid">
           <label>Rezeptname
@@ -2299,9 +2513,18 @@
   //  7.  EVENT-BINDING (fix: Metadaten-Listener nur ohne data-ingredient/-step)
   // ============================================================
   function bindEditorEvents(recipe) {
+    const editable = canEditData();
+    if (!editable) {
+      els.editor.querySelectorAll('input, textarea, select, button').forEach((element) => {
+        if (element.id === 'cookModeBtn') return;
+        element.disabled = true;
+      });
+    }
+
     // Nur Metadaten-Felder: Kein data-ingredient und kein data-step
     els.editor.querySelectorAll('[data-field]:not([data-ingredient]):not([data-step])').forEach(input => {
       input.addEventListener("input", () => {
+        if (!ensureEditAccess()) return;
         const field = input.dataset.field;
         if (field === "folderId") {
           recipe.folderId = input.value || null;
@@ -2321,6 +2544,7 @@
     // Zutaten-Felder (haben data-ingredient)
     els.editor.querySelectorAll('[data-ingredient]').forEach(input => {
       input.addEventListener("input", () => {
+        if (!ensureEditAccess()) return;
         const index = Number(input.dataset.ingredient);
         const field = input.dataset.field;
         const ingredient = recipe.ingredients[index];
@@ -2377,6 +2601,7 @@
     // Schritt-Felder (haben data-step)
     els.editor.querySelectorAll('[data-step]').forEach(textarea => {
       textarea.addEventListener("input", () => {
+        if (!ensureEditAccess()) return;
         recipe.steps[Number(textarea.dataset.step)] = textarea.value;
         save();
         updatePrintArea(recipe);
@@ -2386,6 +2611,7 @@
     // Lösch-Buttons
     els.editor.querySelectorAll('[data-remove-ingredient]').forEach(button => {
       button.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
         recipe.ingredients.splice(Number(button.dataset.removeIngredient), 1);
         if (recipe.ingredients.length === 0) recipe.ingredients.push(createIngredient());
         save();
@@ -2395,6 +2621,7 @@
 
     els.editor.querySelectorAll('[data-remove-step]').forEach(button => {
       button.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
         recipe.steps.splice(Number(button.dataset.removeStep), 1);
         if (recipe.steps.length === 0) recipe.steps.push("");
         save();
@@ -2403,12 +2630,14 @@
     });
 
     document.getElementById("addIngredientBtn")?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       recipe.ingredients.push(createIngredient());
       save();
       renderEditor();
     });
 
     document.getElementById("addStepBtn")?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       recipe.steps.push("");
       save();
       renderEditor();
@@ -2634,6 +2863,7 @@
 
   els.addNutrientForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    if (!ensureEditAccess()) return;
     const name = normalizeText(els.newNutrientName.value);
     if (!name) {
       els.nutrientFeedback.textContent = "⚠️ Bitte einen Namen eingeben.";
@@ -2732,6 +2962,7 @@
   }
 
   function openNutrientEntryModal(mode = "create") {
+    if (!ensureEditAccess()) return;
     nutrientEntryMode = mode;
     nutrientEntryOriginalName = "";
     els.nutrientEntryFeedback.textContent = "";
@@ -2779,6 +3010,7 @@
   }
 
   async function deleteSelectedCustomNutrient() {
+    if (!ensureEditAccess()) return;
     const selectedName = state.selectedCustomNutrient;
     const selectedSource = state.selectedNutrientSource;
     const userLib = loadUserNutrients();
@@ -2810,6 +3042,7 @@
 
   function saveNutrientEntryFromModal(event) {
     event.preventDefault();
+    if (!ensureEditAccess()) return;
     const name = normalizeText(els.entryNutrientName.value);
     const alias = normalizeText(els.entryNutrientAlias.value);
     const kcal = parseFloat(els.entryNutrientKcal.value) || 0;
@@ -3058,6 +3291,7 @@
 
   els.addFolderForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    if (!ensureEditAccess()) return;
     const name = normalizeText(els.newFolderName.value);
     if (!name) {
       els.folderFeedback.textContent = "⚠️ Bitte einen Ordnernamen eingeben.";
@@ -3099,6 +3333,7 @@
   }
 
   async function importData(file) {
+    if (!ensureEditAccess()) return;
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -3192,10 +3427,14 @@
 
   // Buttons
   els.newRecipeBtn.addEventListener("click", () => {
+    if (!ensureEditAccess()) return;
     createRecipe(state.selectedFolderId);
     showToast("Neues Rezept angelegt.");
   });
-  els.newFolderBtn.addEventListener("click", openFolderModal);
+  els.newFolderBtn.addEventListener("click", () => {
+    if (!ensureEditAccess()) return;
+    openFolderModal();
+  });
 
   els.filterChips?.querySelectorAll('[data-filter]').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -3219,6 +3458,47 @@
     refreshData().catch((err) => {
       console.warn("Refresh fehlgeschlagen:", err);
     });
+  });
+
+  els.openLoginBtn?.addEventListener("click", openLoginModal);
+  els.logoutBtn?.addEventListener("click", () => {
+    logout().catch((err) => {
+      console.warn("Logout fehlgeschlagen:", err);
+    });
+  });
+
+  els.closeLoginModal?.addEventListener("click", closeLoginModal);
+  els.loginModal?.addEventListener("click", (e) => {
+    if (e.target === els.loginModal) closeLoginModal();
+  });
+  els.loginModal?.addEventListener("keydown", (e) => trapModalFocus(e, els.loginModal));
+  els.loginForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const password = els.loginPassword.value;
+    if (!normalizeText(password)) {
+      els.loginFeedback.textContent = "⚠️ Bitte ein Passwort eingeben.";
+      return;
+    }
+
+    els.loginFeedback.textContent = "Anmeldung läuft...";
+    try {
+      const payload = await apiRequest('/auth/login', {
+        method: 'POST',
+        skipAuth: true,
+        body: JSON.stringify({ password })
+      });
+      setAuthToken(payload?.token || '');
+      await refreshAuthStatus();
+      closeLoginModal();
+      if (hasPendingRecipeSync()) {
+        scheduleBackendSync();
+      }
+      scheduleNutrientSync();
+      render();
+      showToast("Login erfolgreich. Bearbeitung freigeschaltet.");
+    } catch (error) {
+      els.loginFeedback.textContent = `⚠️ ${error.message || 'Login fehlgeschlagen.'}`;
+    }
   });
 
   // Modal schließen (Nährstoffe)
@@ -3259,6 +3539,7 @@
     if (els.confirmModal.classList.contains("open")) els.confirmCancelBtn.click();
     if (els.cookModeModal.classList.contains("open")) closeCookMode();
     if (els.nutrientEntryModal.classList.contains("open")) closeNutrientEntryModal();
+    if (els.loginModal.classList.contains("open")) closeLoginModal();
   });
 
   // Suche

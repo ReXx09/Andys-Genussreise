@@ -8,6 +8,8 @@ services:
     environment:
       - PORT=3000
       - DB_PATH=/data/database.sqlite
+      - KOCHBUCH_ADMIN_PASSWORD=BitteSicheresPasswortSetzen
+      - AUTH_SESSION_TTL_HOURS=24
     volumes:
       - kochbuch-data:/data
       - /app/server/node_modules
