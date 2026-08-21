@@ -4,12 +4,12 @@ services:
     container_name: kochbuch-dashboard
     restart: unless-stopped
     ports:
-      - "8080:3000"
+      - "${PORT:-1900}:${PORT:-1900}"
     environment:
-      - PORT=3000
+      - PORT=${PORT:-1900}
       - DB_PATH=/data/database.sqlite
-      - KOCHBUCH_ADMIN_PASSWORD=BitteSicheresPasswortSetzen
-      - AUTH_SESSION_TTL_HOURS=24
+      - KOCHBUCH_ADMIN_PASSWORD=${KOCHBUCH_ADMIN_PASSWORD}
+      - AUTH_SESSION_TTL_HOURS=${AUTH_SESSION_TTL_HOURS:-24}
     volumes:
       - kochbuch-data:/data
       - /app/server/node_modules
