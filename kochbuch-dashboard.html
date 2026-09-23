@@ -1720,7 +1720,15 @@
 
   function ensureEditAccess() {
     if (canEditData()) return true;
-    showToast("Zum Bearbeiten bitte einloggen.", "info");
+    if (els.authState) {
+      els.authState.textContent = "🔒 Login erforderlich";
+    }
+    showToast(
+      backendMode
+        ? "🔒 Zum Bearbeiten bitte einloggen."
+        : "🔒 Änderungen gesperrt: Backend nicht erreichbar.",
+      "error"
+    );
     openLoginModal();
     return false;
   }
