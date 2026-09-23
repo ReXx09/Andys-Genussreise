@@ -265,6 +265,25 @@ function parseRecipeInstructions(instructions) {
   }).filter(Boolean);
 }
 
+function parseIngredientText(value) {
+  const text = clampString(value, 300).trim();
+  const match = text.match(/^([0-9]+(?:[,.][0-9]+)?|[0-9]+\/[0-9]+|[½¼¾])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
+  if (!match) return { name: text, amount: 0, unit: '' };
+
+  const amountText = match[1];
+  const amount = amountText === '½' ? 0.5 : amountText === '¼' ? 0.25 : amountText === '¾' ? 0.75 : amountText.includes('/')
+    ? amountText.split('/').reduce((total, part) => total / Number(part), Number(amountText.split('/')[0]))
+    : Number(amountText.replace(',', '.'));
+  const unitAliases = {
+    kg: 'kg', g: 'g', gramm: 'g', ml: 'ml', l: 'l', el: 'el', tl: 'tl',
+    st: 'Stück', stk: 'Stück', stück: 'Stück', stücke: 'Stück', dose: 'Dose', dosen: 'Dose'
+  };
+  const candidateUnit = String(match[2] || '').replace('.', '').toLowerCase();
+  const unit = unitAliases[candidateUnit] || '';
+  const name = unit ? match[3].trim() : `${match[2] ? `${match[2]} ` : ''}${match[3]}`.trim();
+  return { name, amount: Number.isFinite(amount) ? amount : 0, unit };
+}
+
 function parseRecipePage(html) {
   const scripts = [...String(html).matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
   for (const match of scripts) {
@@ -290,7 +309,7 @@ function parseRecipePage(html) {
         difficulty: 'mittel',
         tags: clampString(Array.isArray(recipe.keywords) ? recipe.keywords.join(', ') : recipe.keywords, 300),
         ingredients: (Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : [])
-          .map((ingredient) => normalizeIngredient({ name: ingredient, amount: 0, unit: '' })),
+          .map((ingredient) => normalizeIngredient(parseIngredientText(ingredient))),
         steps: parseRecipeInstructions(recipe.recipeInstructions),
         sourceFields
       };

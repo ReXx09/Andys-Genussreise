@@ -1203,6 +1203,13 @@
         <label>Ordner im Kochbuch
           <select id="urlPreviewFolder"></select>
         </label>
+        <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:4px;">
+          <label style="flex:1; min-width:220px;">Kochbuchrezept zum Vergleich
+            <select id="urlCompareRecipe"></select>
+          </label>
+          <button type="button" class="ghost" id="compareUrlRecipeBtn">↔ Vergleich anzeigen</button>
+        </div>
+        <div id="urlRecipeComparison" class="hidden" style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; border-top:1px solid var(--border, #e0d6cb); padding-top:12px;"></div>
         <button type="submit" class="secondary" id="saveUrlImportBtn">💾 Als Rezept übernehmen</button>
       </form>
       <div id="urlImportProgress" class="hidden" role="status" aria-live="polite" style="margin-top:14px;">
@@ -1490,6 +1497,9 @@
     urlPreviewIngredients: document.getElementById("urlPreviewIngredients"),
     urlPreviewSteps: document.getElementById("urlPreviewSteps"),
     urlPreviewFolder: document.getElementById("urlPreviewFolder"),
+    urlCompareRecipe: document.getElementById("urlCompareRecipe"),
+    compareUrlRecipeBtn: document.getElementById("compareUrlRecipeBtn"),
+    urlRecipeComparison: document.getElementById("urlRecipeComparison"),
     saveUrlImportBtn: document.getElementById("saveUrlImportBtn"),
     cookModeModal: document.getElementById("cookModeModal"),
     cookModeContent: document.getElementById("cookModeContent"),
@@ -3503,6 +3513,24 @@
     els.urlPreviewFolder.value = selectedFolderId || "";
   }
 
+  function parseImportedIngredientLine(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/^([0-9]+(?:[,.][0-9]+)?|[0-9]+\/[0-9]+|[½¼¾])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
+    if (!match) return { name: text, amount: 0, unit: "" };
+    const amountText = match[1];
+    const amount = amountText === "½" ? 0.5 : amountText === "¼" ? 0.25 : amountText === "¾" ? 0.75 : amountText.includes("/")
+      ? amountText.split("/").reduce((total, part) => total / Number(part), Number(amountText.split("/")[0]))
+      : Number(amountText.replace(",", "."));
+    const units = { kg: "kg", g: "g", gramm: "g", ml: "ml", l: "l", el: "el", tl: "tl", st: "Stück", stk: "Stück", stück: "Stück", stücke: "Stück", dose: "Dose", dosen: "Dose" };
+    const candidateUnit = String(match[2] || "").replace(".", "").toLowerCase();
+    const unit = units[candidateUnit] || "";
+    return {
+      name: (unit ? match[3] : `${match[2] ? `${match[2]} ` : ""}${match[3]}`).trim(),
+      amount: Number.isFinite(amount) ? amount : 0,
+      unit
+    };
+  }
+
   function fillUrlImportPreview(recipe) {
     els.urlPreviewName.value = recipe.name || "";
     els.urlPreviewCategory.value = recipe.category || "";
@@ -3510,7 +3538,10 @@
     els.urlPreviewPrepTime.value = recipe.prepTime || "";
     els.urlPreviewCookingTime.value = recipe.cookingTime || "";
     els.urlPreviewTags.value = recipe.tags || "";
-    els.urlPreviewIngredients.value = (recipe.ingredients || []).map((ingredient) => ingredient.name || "").filter(Boolean).join("\n");
+    els.urlPreviewIngredients.value = (recipe.ingredients || []).map((ingredient) => {
+      const parts = [ingredient.amount || "", ingredient.unit || "", ingredient.name || ""].filter(Boolean);
+      return parts.join(" ");
+    }).filter(Boolean).join("\n");
     els.urlPreviewSteps.value = (recipe.steps || []).join("\n");
     renderUrlImportWarnings(recipe.sourceFields || {});
     renderUrlImportFolders();
@@ -3550,8 +3581,8 @@
       els.urlImportFeedback.textContent = "⚠️ Bitte einen Rezeptnamen eingeben.";
       return;
     }
-    const ingredients = els.urlPreviewIngredients.value.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
-      .map((name) => ({ name, amount: 0, unit: "", nutrientKey: "", kcal: 0, protein: 0, carbs: 0, fat: 0 }));
+    const ingredients = els.urlPreviewIngredients.value.split(/\r?\n/).map((line) => parseImportedIngredientLine(line)).filter((ingredient) => ingredient.name)
+      .map((ingredient) => ({ ...ingredient, nutrientKey: "", kcal: 0, protein: 0, carbs: 0, fat: 0 }));
     const steps = els.urlPreviewSteps.value.split(/\r?\n/).map((step) => step.trim()).filter(Boolean);
     const recipe = normalizeRecipeForState({
       id: uid(),
