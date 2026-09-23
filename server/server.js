@@ -5,8 +5,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
-import dns from 'node:dns/promises';
-import net from 'node:net';
+import { clampString, normalizeIngredient, parseIngredientText, parseRecipePage } from './import-parser.js';
+import { validateImportUrl } from './import-security.js';
+import { fetchImportResponse, isRedirectStatus, readLimitedResponse } from './import-http.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -118,23 +119,6 @@ function requireAuth(req, res, next) {
   next();
 }
 
-function clampString(value, maxLength) {
-  return String(value || '').slice(0, maxLength);
-}
-
-function normalizeIngredient(input) {
-  return {
-    name: clampString(input?.name, 200),
-    amount: Number(input?.amount) || 0,
-    unit: clampString(input?.unit, 20),
-    nutrientKey: clampString(input?.nutrientKey, 120),
-    kcal: Number(input?.kcal) || 0,
-    protein: Number(input?.protein) || 0,
-    carbs: Number(input?.carbs) || 0,
-    fat: Number(input?.fat) || 0
-  };
-}
-
 function validatePayload(input) {
   if (!input || typeof input !== 'object') {
     return { ok: false, error: 'Ungueltige Nutzdaten' };
@@ -236,153 +220,6 @@ function normalizeNutrient(input) {
   };
 }
 
-function parseIsoDuration(value) {
-  const match = String(value || '').match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/i);
-  if (!match) return '';
-  const hours = Number(match[1] || 0);
-  const minutes = Number(match[2] || 0);
-  if (!hours && !minutes) return '';
-  return `${hours ? `${hours} Std. ` : ''}${minutes ? `${minutes} Min.` : ''}`.trim();
-}
-
-function findRecipeJsonLd(value) {
-  if (!value) return null;
-  if (Array.isArray(value)) {
-    return value.map(findRecipeJsonLd).find(Boolean) || null;
-  }
-  if (typeof value !== 'object') return null;
-  const types = Array.isArray(value['@type']) ? value['@type'] : [value['@type']];
-  if (types.some((type) => String(type || '').toLowerCase() === 'recipe')) return value;
-  if (Array.isArray(value['@graph'])) return findRecipeJsonLd(value['@graph']);
-  return null;
-}
-
-function parseRecipeInstructions(instructions) {
-  const values = Array.isArray(instructions) ? instructions : instructions ? [instructions] : [];
-  return values.flatMap((step) => {
-    if (typeof step === 'string') return [step.trim()];
-    if (Array.isArray(step?.itemListElement)) return parseRecipeInstructions(step.itemListElement);
-    if (step?.text) return [String(step.text).trim()];
-    if (step?.item) return parseRecipeInstructions(step.item);
-    return [];
-  }).filter(Boolean);
-}
-
-function parseIngredientText(value) {
-  const text = clampString(value, 300).trim();
-  const match = text.match(/^((?:[0-9]+\s+)?[0-9]+\/[0-9]+|[0-9]+(?:[,.][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[,.][0-9]+)?)?|[½¼¾⅓⅔⅛⅜⅝⅞])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
-  if (!match) return { name: text, amount: text ? 1 : 0, unit: '' };
-
-  const amountText = match[1];
-  const fractionValues = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 0.125, '⅜': 0.375, '⅝': 0.625, '⅞': 0.875 };
-  const parseAmount = (raw) => {
-    const valueText = raw.trim();
-    if (fractionValues[valueText]) return fractionValues[valueText];
-    const mixed = valueText.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-    if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
-    if (/^\d+\/\d+$/.test(valueText)) {
-      const [numerator, denominator] = valueText.split('/').map(Number);
-      return denominator ? numerator / denominator : NaN;
-    }
-    return Number(valueText.replace(',', '.'));
-  };
-  const range = amountText.split(/\s*[-–]\s*/).map(parseAmount);
-  const amount = range.length === 2 ? (range[0] + range[1]) / 2 : range[0];
-  const unitAliases = {
-    kg: 'kg', g: 'g', gramm: 'g', gramm: 'g', ml: 'ml', l: 'l', el: 'EL', esslöffel: 'EL', tl: 'TL', teelöffel: 'TL',
-    st: 'Stück', stk: 'Stück', stück: 'Stück', stücke: 'Stück', dose: 'Dose', dosen: 'Dose', packung: 'Packung', packungen: 'Packung',
-    pkg: 'Packung', prise: 'Prise', prisen: 'Prise', bund: 'Bund', bünde: 'Bund', zehe: 'Zehe', zehen: 'Zehe'
-  };
-  const candidateUnit = String(match[2] || '').replace('.', '').toLowerCase();
-  const unit = unitAliases[candidateUnit] || '';
-  const name = unit ? match[3].trim() : `${match[2] ? `${match[2]} ` : ''}${match[3]}`.trim();
-  return { name, amount: Number.isFinite(amount) ? amount : 0, unit };
-}
-
-function parseRecipePage(html) {
-  const scripts = [...String(html).matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
-  for (const match of scripts) {
-    try {
-      const parsed = JSON.parse(match[1].trim());
-      const recipe = findRecipeJsonLd(parsed);
-      if (!recipe?.name) continue;
-      const sourceFields = {
-        category: Boolean(recipe.recipeCategory),
-        portions: Boolean(recipe.recipeYield),
-        prepTime: Boolean(recipe.prepTime),
-        cookingTime: Boolean(recipe.cookTime),
-        tags: Boolean(recipe.keywords),
-        ingredients: Array.isArray(recipe.recipeIngredient) && recipe.recipeIngredient.length > 0,
-        steps: Array.isArray(recipe.recipeInstructions) && recipe.recipeInstructions.length > 0
-      };
-      return {
-        name: clampString(recipe.name, 256),
-        category: clampString(Array.isArray(recipe.recipeCategory) ? recipe.recipeCategory[0] : recipe.recipeCategory, 100),
-        portions: Math.max(1, Number.parseInt(String(recipe.recipeYield || '').match(/\d+/)?.[0] || '4', 10)),
-        prepTime: parseIsoDuration(recipe.prepTime),
-        cookingTime: parseIsoDuration(recipe.cookTime),
-        difficulty: 'mittel',
-        tags: clampString(Array.isArray(recipe.keywords) ? recipe.keywords.join(', ') : recipe.keywords, 300),
-        ingredients: (Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : recipe.recipeIngredient ? [recipe.recipeIngredient] : [])
-          .map((ingredient) => normalizeIngredient(parseIngredientText(ingredient))),
-        steps: parseRecipeInstructions(recipe.recipeInstructions),
-        sourceFields
-      };
-    } catch {
-      // Try the next JSON-LD block when a page contains malformed metadata.
-    }
-  }
-  return null;
-}
-
-function isPrivateAddress(address) {
-  if (net.isIP(address) === 4) {
-    return /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address);
-  }
-  const normalized = address.toLowerCase();
-  return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
-}
-
-async function validateImportUrl(rawUrl) {
-  let url;
-  try {
-    url = new URL(String(rawUrl || '').trim());
-  } catch {
-    return null;
-  }
-  if (!['http:', 'https:'].includes(url.protocol)) return null;
-  const hostname = url.hostname.toLowerCase();
-  if (hostname === 'localhost' || hostname === '::1' || hostname.endsWith('.local') ||
-      /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) {
-    return null;
-  }
-  try {
-    const addresses = net.isIP(hostname) ? [hostname] : (await dns.lookup(hostname, { all: true })).map((entry) => entry.address);
-    if (addresses.some(isPrivateAddress)) return null;
-  } catch {
-    return null;
-  }
-  return url;
-}
-
-async function readLimitedResponse(response, maxBytes) {
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new Error('response-too-large');
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
-
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, database: dbPath });
 });
@@ -434,12 +271,8 @@ app.post('/api/recipes/import-preview', requireAuth, async (req, res) => {
   }
 
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(30000),
-      redirect: 'manual',
-      headers: { 'User-Agent': 'AndysKochbuchRecipeImporter/1.0' }
-    });
-    if (response.status >= 300 && response.status < 400) {
+    const response = await fetchImportResponse(url);
+    if (isRedirectStatus(response.status)) {
       return res.status(422).json({ error: 'Die Rezeptseite leitet weiter. Bitte den endgültigen Link verwenden.' });
     }
     if (!response.ok) {

@@ -1,18 +1,7 @@
 import assert from 'node:assert/strict';
-import { after, describe, it } from 'node:test';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { unlinkSync } from 'node:fs';
+import { describe, it } from 'node:test';
 
-const testDbPath = join(tmpdir(), `andys-kochbuch-test-${process.pid}.sqlite`);
-process.env.DB_PATH = testDbPath;
-const { parseIngredientText, parseRecipePage } = await import('../server.js');
-
-after(() => {
-  for (const suffix of ['', '-wal', '-shm']) {
-    try { unlinkSync(`${testDbPath}${suffix}`); } catch {}
-  }
-});
+const { parseIngredientText, parseRecipePage } = await import('../import-parser.js');
 
 describe('Rezeptimport-Katalog', () => {
   it('verarbeitet einfache Zutaten mit Einheit', () => {

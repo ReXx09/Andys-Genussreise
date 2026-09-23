@@ -45,15 +45,17 @@
 - [x] Brueche, Bereichsangaben und Einheiten wie TL/EL/Stueck verbessern
 - [x] Zutaten ohne erkennbare Menge sinnvoll vorbelegen
 - [x] Importquelle und Abrufdatum im Rezept optional speichern
-- [ ] Weitere Rezeptseiten mit einem kleinen Testkatalog pruefen
+- [x] Weitere Rezeptseiten mit einem kleinen Testkatalog pruefen
 
 ### 5. Tests und Sicherheit
 
-- [ ] Unit-Tests fuer Zutatenparser und Mengenberechnung ergaenzen
-- [ ] Tests fuer fehlende JSON-LD-Felder ergaenzen
-- [ ] SSRF-Schutz und Redirect-Verhalten weiter testen
-- [ ] URL-Import mit zu grosser oder langsamer Antwort testen
-- [ ] API- und Frontend-Syntaxpruefung in den Build aufnehmen
+- [x] Unit-Tests fuer Zutatenparser und Mengenberechnung ergaenzen
+- [x] Tests fuer fehlende JSON-LD-Felder ergaenzen
+- [x] SSRF-Schutz weiter testen
+- [x] Redirect-Verhalten testen
+- [x] URL-Import mit zu grosser Antwort testen
+- [x] URL-Import mit langsamer Antwort testen
+- [x] API- und Frontend-Syntaxpruefung in den Build aufnehmen
 
 ### 6. Deployment und Betrieb
 
