@@ -914,7 +914,7 @@
     .ingredient-row td:first-child input { font-weight: 500; }
     .nutrition-inputs {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
       margin-top: 4px;
     }
@@ -924,12 +924,14 @@
       min-width: 0;
     }
     .nutrition-inputs label span {
+      min-width: 0;
       color: var(--text-muted);
       font-size: 0.66rem;
       font-weight: 700;
       line-height: 1;
       text-transform: uppercase;
       letter-spacing: 0.02em;
+      overflow-wrap: anywhere;
     }
     .nutrition-inputs input {
       padding: 4px 8px;
