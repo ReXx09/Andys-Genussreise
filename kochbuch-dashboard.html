@@ -3448,6 +3448,8 @@
     els.urlImportInput.value = "";
     els.urlImportFeedback.textContent = "";
     els.urlImportPreview.classList.add("hidden");
+    els.urlRecipeComparison.classList.add("hidden");
+    els.urlRecipeComparison.innerHTML = "";
     stopUrlImportProgress(false);
     els.urlImportModal.classList.add("open");
     els.urlImportInput.focus();
@@ -3458,6 +3460,7 @@
   }
 
   let urlImportProgressTimer = null;
+  let urlImportRecipe = null;
 
   function startUrlImportProgress() {
     clearInterval(urlImportProgressTimer);
