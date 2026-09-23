@@ -1059,10 +1059,6 @@
   <button id="openLoginBtn" class="ghost">🔐 Login</button>
   <button id="logoutBtn" class="ghost hidden">🚪 Logout</button>
   <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
-  <button id="exportNavBtn" class="ghost">⬇️ Export</button>
-  <label class="button-link ghost" for="importNavFile">⬆️ Import
-    <input id="importNavFile" type="file" accept=".json,application/json" class="hidden" />
-  </label>
   <button id="openUrlImportBtn" class="ghost">🌐 URL-Import</button>
   <button id="printNavBtn" class="ghost">🖨️ Drucken</button>
 </nav>
@@ -1493,8 +1489,6 @@
     onlineNutrientBarcode: document.getElementById("onlineNutrientBarcode"),
     onlineNutrientResults: document.getElementById("onlineNutrientResults"),
     onlineNutrientFeedback: document.getElementById("onlineNutrientFeedback"),
-    exportNavBtn: document.getElementById("exportNavBtn"),
-    importNavFile: document.getElementById("importNavFile"),
     openUrlImportBtn: document.getElementById("openUrlImportBtn"),
     printNavBtn: document.getElementById("printNavBtn"),
     authState: document.getElementById("authState"),
@@ -3519,63 +3513,6 @@
     renderRecipeList();
   });
 
-  // ============================================================
-  //  11. EXPORT / IMPORT
-  // ============================================================
-  function exportData() {
-    const data = JSON.stringify({
-      app: "digitales-kochbuch",
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      nutrientLibrary: nutrientLibrary,
-      recipes: state.recipes,
-      userNutrients: loadUserNutrients(),
-      folders: loadFolders()
-    }, null, 2);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "mein-kochbuch-export.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function importData(file) {
-    if (!ensureEditAccess()) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const data = JSON.parse(reader.result);
-        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
-        if (!recipes.length) throw new Error("Keine Rezepte gefunden.");
-        recipes.forEach(recipe => {
-          recipe.id = recipe.id || uid();
-          recipe.ingredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-          recipe.steps = Array.isArray(recipe.steps) ? recipe.steps : [];
-          if (!recipe.hasOwnProperty('folderId')) recipe.folderId = null;
-        });
-        state.recipes = recipes;
-        state.selectedId = state.recipes[0]?.id || null;
-        state.selectedFolderId = null;
-
-        if (data.folders && Array.isArray(data.folders)) {
-          saveFolders(data.folders);
-        }
-        if (data.userNutrients) {
-          saveUserNutrients(data.userNutrients);
-          refreshLibrary();
-        }
-        save();
-        render();
-        showToast("Kochbuch erfolgreich importiert.");
-      } catch (err) {
-        showToast("Import fehlgeschlagen: " + err.message, "error");
-      }
-    };
-    reader.readAsText(file);
-  }
-
   function openUrlImportModal() {
     if (!ensureEditAccess()) return;
     els.urlImportInput.value = "";
@@ -4118,12 +4055,6 @@
     });
   });
 
-  els.exportNavBtn.addEventListener("click", exportData);
-  els.importNavFile.addEventListener("change", e => {
-    const file = e.target.files?.[0];
-    if (file) importData(file);
-    e.target.value = "";
-  });
   els.openUrlImportBtn?.addEventListener("click", openUrlImportModal);
   els.printNavBtn.addEventListener("click", () => window.print());
 
