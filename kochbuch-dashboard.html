@@ -3434,6 +3434,33 @@
     els.urlImportModal.classList.remove("open");
   }
 
+  function renderUrlImportWarnings(sourceFields = {}) {
+    const fieldLabels = {
+      category: "Kategorie",
+      portions: "Portionen",
+      prepTime: "Zubereitungszeit",
+      cookingTime: "Kochzeit",
+      tags: "Tags",
+      ingredients: "Zutaten",
+      steps: "Zubereitungsschritte"
+    };
+    const missing = Object.entries(fieldLabels)
+      .filter(([field]) => sourceFields[field] === false)
+      .map(([, label]) => label);
+    const messages = [
+      "Ordner: nicht in der externen Quelle vorhanden. Bitte den Zielordner unten festlegen.",
+      ...missing.map((label) => `${label}: nicht in der Quelle gefunden; bitte prüfen oder ergänzen.`)
+    ];
+    els.urlImportWarnings.innerHTML = `<strong>Importprüfung</strong><ul style="margin:6px 0 0 18px;">${messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ul>`;
+  }
+
+  function renderUrlImportFolders(selectedFolderId = state.selectedFolderId) {
+    const options = [`<option value="">Kein Ordner</option>`]
+      .concat(loadFolders().map((folder) => `<option value="${escapeAttr(folder.id)}">${escapeHtml(folder.name)}</option>`));
+    els.urlPreviewFolder.innerHTML = options.join("");
+    els.urlPreviewFolder.value = selectedFolderId || "";
+  }
+
   function fillUrlImportPreview(recipe) {
     els.urlPreviewName.value = recipe.name || "";
     els.urlPreviewCategory.value = recipe.category || "";
@@ -3443,6 +3470,8 @@
     els.urlPreviewTags.value = recipe.tags || "";
     els.urlPreviewIngredients.value = (recipe.ingredients || []).map((ingredient) => ingredient.name || "").filter(Boolean).join("\n");
     els.urlPreviewSteps.value = (recipe.steps || []).join("\n");
+    renderUrlImportWarnings(recipe.sourceFields || {});
+    renderUrlImportFolders();
     els.urlImportPreview.classList.remove("hidden");
   }
 
@@ -3487,7 +3516,7 @@
       difficulty: "mittel",
       tags: els.urlPreviewTags.value.trim(),
       favorite: false,
-      folderId: state.selectedFolderId,
+      folderId: els.urlPreviewFolder.value || null,
       ingredients,
       steps
     });
