@@ -1605,6 +1605,47 @@
   }
   function saveFolders(folders) {
     localStorage.setItem(FOLDER_KEY, JSON.stringify(folders));
+    scheduleFolderSync();
+  }
+
+  async function syncFoldersToApi() {
+    if (!canEditData()) return;
+    await apiRequest('/folders/sync', {
+      method: 'POST',
+      body: JSON.stringify({ folders: loadFolders() })
+    });
+  }
+
+  function scheduleFolderSync() {
+    if (!backendMode || !canEditData()) return;
+    folderSyncQueue = folderSyncQueue
+      .then(() => syncFoldersToApi())
+      .catch((error) => {
+        if (error?.status === 401 || error?.status === 403) {
+          handleUnauthorized("Login erforderlich. Ordner wurden nicht synchronisiert.");
+          return;
+        }
+        console.warn("Ordner-Sync fehlgeschlagen:", error);
+      });
+  }
+
+  async function loadFoldersFromApi() {
+    if (!backendMode) return;
+    try {
+      const remoteFolders = await apiRequest('/folders');
+      const localFolders = loadFolders();
+      if (remoteFolders.length > 0 || localFolders.length === 0) {
+        saveFoldersLocal(remoteFolders);
+      } else if (canEditData()) {
+        await syncFoldersToApi();
+      }
+    } catch (error) {
+      console.warn("Ordner konnten nicht vom Server geladen werden:", error);
+    }
+  }
+
+  function saveFoldersLocal(folders) {
+    localStorage.setItem(FOLDER_KEY, JSON.stringify(Array.isArray(folders) ? folders : []));
   }
 
   function createFolder(name) {
@@ -1659,6 +1700,7 @@
   let backendMode = false;
   let syncTimer = null;
   let syncQueue = Promise.resolve();
+  let folderSyncQueue = Promise.resolve();
   let nutrientSyncTimer = null;
   let nutrientSyncQueue = Promise.resolve();
   let nutrientEntryMode = "create";
@@ -2478,6 +2520,7 @@
       if (Array.isArray(remoteRecipes)) {
         backendMode = true;
         await refreshAuthStatus();
+        await loadFoldersFromApi();
         try {
           await loadUserNutrientsFromApi();
         } catch (error) {

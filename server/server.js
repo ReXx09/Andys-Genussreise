@@ -61,6 +61,15 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS folders (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 const columns = db.prepare("PRAGMA table_info(recipes)").all();
 if (!columns.some((col) => col.name === 'folder_id')) {
   db.exec("ALTER TABLE recipes ADD COLUMN folder_id TEXT DEFAULT NULL");
@@ -484,6 +493,41 @@ app.delete('/api/recipes/:id', requireAuth, (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+app.get('/api/folders', (req, res) => {
+  const rows = db.prepare('SELECT id, name FROM folders ORDER BY name COLLATE NOCASE ASC').all();
+  res.json(rows);
+});
+
+app.post('/api/folders/sync', requireAuth, (req, res) => {
+  const folders = Array.isArray(req.body?.folders) ? req.body.folders : null;
+  if (!folders || folders.length > 200) {
+    return res.status(400).json({ error: 'folders muss ein Array mit maximal 200 Einträgen sein' });
+  }
+
+  const normalizedFolders = [];
+  const ids = new Set();
+  for (const input of folders) {
+    const id = clampString(input?.id, 80);
+    const name = clampString(input?.name, 120).trim();
+    if (!id || !name) return res.status(400).json({ error: 'Ordner benötigen eine ID und einen Namen' });
+    if (ids.has(id)) return res.status(400).json({ error: 'Ordner-IDs müssen eindeutig sein' });
+    ids.add(id);
+    normalizedFolders.push({ id, name });
+  }
+
+  const now = new Date().toISOString();
+  const replaceFolders = db.transaction(() => {
+    db.prepare('DELETE FROM folders').run();
+    const insert = db.prepare(`
+      INSERT INTO folders (id, name, created_at, updated_at)
+      VALUES (@id, @name, @created_at, @updated_at)
+    `);
+    normalizedFolders.forEach((folder) => insert.run({ ...folder, created_at: now, updated_at: now }));
+  });
+  replaceFolders();
+  res.json({ ok: true, count: normalizedFolders.length });
 });
 
 app.post('/api/recipes/reset', requireAuth, (req, res) => {
