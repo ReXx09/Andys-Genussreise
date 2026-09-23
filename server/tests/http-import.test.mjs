@@ -20,7 +20,11 @@ describe('HTTP-Rezeptimport', () => {
 
   it('bricht langsame Antworten per Timeout ab', async () => {
     const slowFetch = (_url, options) => new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      const timer = setTimeout(() => {}, 1000);
+      options.signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(options.signal.reason);
+      }, { once: true });
     });
     await assert.rejects(fetchImportResponse('https://example.com', slowFetch, 5), { name: 'TimeoutError' });
   });
