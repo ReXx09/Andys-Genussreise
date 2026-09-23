@@ -3516,6 +3516,39 @@
     els.urlPreviewFolder.value = selectedFolderId || "";
   }
 
+  function renderUrlCompareOptions() {
+    const options = [`<option value="">Rezept auswählen...</option>`]
+      .concat(state.recipes.map((recipe) => `<option value="${escapeAttr(recipe.id)}">${escapeHtml(recipe.name || "Unbenanntes Rezept")}</option>`));
+    els.urlCompareRecipe.innerHTML = options.join("");
+  }
+
+  function renderUrlComparisonRecipe(recipe, title) {
+    const ingredients = (recipe.ingredients || []).map((ingredient) => [ingredient.amount, ingredient.unit, ingredient.name].filter(Boolean).join(" "));
+    const steps = recipe.steps || [];
+    return `<section style="border:1px solid var(--border, #e0d6cb); padding:10px; min-width:0;">
+      <h3 style="margin-bottom:6px;">${escapeHtml(title)}</h3>
+      <p class="muted">${escapeHtml(recipe.category || "Keine Kategorie")} · ${escapeHtml(recipe.portions || "?")} Portionen</p>
+      <p><strong>Zubereitung:</strong> ${escapeHtml(recipe.prepTime || "-")} / ${escapeHtml(recipe.cookingTime || "-")}</p>
+      <h4>Zutaten</h4>
+      <ul style="padding-left:18px; margin:4px 0 12px;">${ingredients.length ? ingredients.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>Keine Zutaten</li>"}</ul>
+      <h4>Schritte</h4>
+      <ol style="padding-left:20px; margin:4px 0;">${steps.length ? steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("") : "<li>Keine Schritte</li>"}</ol>
+    </section>`;
+  }
+
+  function showUrlRecipeComparison() {
+    const selectedRecipe = state.recipes.find((recipe) => recipe.id === els.urlCompareRecipe.value);
+    if (!urlImportRecipe || !selectedRecipe) {
+      els.urlImportFeedback.textContent = "⚠️ Bitte zuerst ein Kochbuchrezept für den Vergleich auswählen.";
+      return;
+    }
+    els.urlRecipeComparison.innerHTML = [
+      renderUrlComparisonRecipe(urlImportRecipe, "Importierte Vorschau"),
+      renderUrlComparisonRecipe(selectedRecipe, "Kochbuchrezept")
+    ].join("");
+    els.urlRecipeComparison.classList.remove("hidden");
+  }
+
   function parseImportedIngredientLine(value) {
     const text = String(value || "").trim();
     const match = text.match(/^([0-9]+(?:[,.][0-9]+)?|[0-9]+\/[0-9]+|[½¼¾])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
@@ -3535,6 +3568,7 @@
   }
 
   function fillUrlImportPreview(recipe) {
+    urlImportRecipe = recipe;
     els.urlPreviewName.value = recipe.name || "";
     els.urlPreviewCategory.value = recipe.category || "";
     els.urlPreviewPortions.value = recipe.portions || 4;
@@ -3548,6 +3582,8 @@
     els.urlPreviewSteps.value = (recipe.steps || []).join("\n");
     renderUrlImportWarnings(recipe.sourceFields || {});
     renderUrlImportFolders();
+    renderUrlCompareOptions();
+    els.urlRecipeComparison.classList.add("hidden");
     els.urlImportPreview.classList.remove("hidden");
   }
 
@@ -3750,6 +3786,7 @@
   els.urlImportModal?.addEventListener("keydown", (e) => trapModalFocus(e, els.urlImportModal));
   els.urlImportForm?.addEventListener("submit", fetchUrlImportPreview);
   els.urlImportPreview?.addEventListener("submit", saveUrlImport);
+  els.compareUrlRecipeBtn?.addEventListener("click", showUrlRecipeComparison);
 
   // Modal schließen (Nährstoffe)
   els.closeNutrientModal.addEventListener("click", closeNutrientModal);
