@@ -2854,8 +2854,11 @@
     });
 
     els.editor.querySelectorAll('[data-remove-step]').forEach(button => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         if (!ensureEditAccess()) return;
+        const stepNumber = Number(button.dataset.removeStep) + 1;
+        const ok = await confirmAction(`Schritt ${stepNumber} wirklich löschen?`);
+        if (!ok) return;
         recipe.steps.splice(Number(button.dataset.removeStep), 1);
         if (recipe.steps.length === 0) recipe.steps.push("");
         save();
