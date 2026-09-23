@@ -16,6 +16,9 @@ const dbPath = process.env.DB_PATH || join(rootDir, 'database.sqlite');
 
 const app = express();
 const port = process.env.PORT || 3000;
+const appVersion = process.env.APP_VERSION || 'unknown';
+const vcsRef = process.env.VCS_REF || 'unknown';
+const buildDate = process.env.BUILD_DATE || 'unknown';
 
 const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
 app.use(cors({ origin: allowedOrigin }));
@@ -547,11 +550,18 @@ app.get('*', (req, res) => {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   app.listen(port, '0.0.0.0', () => {
-    console.log(`Andys Genussreise läuft auf http://localhost:${port}`);
-    console.log(`SQLite Datenbank: ${dbPath}`);
+    console.log('=== Andys Genussreise gestartet ===');
+    console.log(`Version: ${appVersion}`);
+    console.log(`Commit: ${vcsRef}`);
+    console.log(`Build: ${buildDate}`);
+    console.log(`Node: ${process.version} | Umgebung: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`HTTP: http://0.0.0.0:${port} | Health: /api/health`);
+    console.log(`SQLite: ${dbPath} | WAL: aktiviert`);
+    console.log(`Auth: ${authPassword ? 'konfiguriert' : 'NICHT konfiguriert'}`);
     if (!authPassword) {
       console.warn('WARNUNG: KOCHBUCH_ADMIN_PASSWORD ist nicht gesetzt. Bearbeiten ist serverseitig gesperrt.');
     }
+    console.log('====================================');
   });
 }
 

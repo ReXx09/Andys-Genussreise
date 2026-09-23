@@ -43,3 +43,7 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/rexx09/andys-genussreise:latest
+          build-args: |
+            APP_VERSION=${{ github.run_number }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.run_started_at }}

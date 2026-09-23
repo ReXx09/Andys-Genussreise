@@ -1,5 +1,14 @@
 FROM node:22-alpine
 
+ARG APP_VERSION=unknown
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+
+ENV NODE_ENV=production \
+	APP_VERSION=$APP_VERSION \
+	VCS_REF=$VCS_REF \
+	BUILD_DATE=$BUILD_DATE
+
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
