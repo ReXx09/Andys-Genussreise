@@ -3,6 +3,8 @@ services:
     image: ghcr.io/rexx09/andys-genussreise:latest
     container_name: kochbuch-dashboard
     restart: unless-stopped
+    labels:
+      - "net.unraid.docker.webui=http://[IP]:[PORT:3000]/"
     ports:
       - "${HOST_PORT:-1900}:3000"
     environment:
@@ -13,15 +15,3 @@ services:
     volumes:
       - ${DATA_DIR:-/mnt/user/appdata/andys-kochbuch}:/data
     working_dir: /app/server
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - >-
-          fetch('http://127.0.0.1:3000/api/health').then(response =>
-          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
