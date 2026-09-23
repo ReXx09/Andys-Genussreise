@@ -1665,7 +1665,7 @@
   }
 
   function canEditData() {
-    if (!backendMode) return true;
+    if (!backendMode) return false;
     if (!authConfigured) return false;
     return hasAuthToken();
   }
@@ -1674,8 +1674,8 @@
     if (!els.authState || !els.openLoginBtn || !els.logoutBtn) return;
 
     if (!backendMode) {
-      els.authState.textContent = "💾 Lokal-Modus";
-      els.openLoginBtn.classList.add("hidden");
+      els.authState.textContent = "⚠️ Nur Lesen (Backend nicht erreichbar)";
+      els.openLoginBtn.classList.remove("hidden");
       els.logoutBtn.classList.add("hidden");
       return;
     }
