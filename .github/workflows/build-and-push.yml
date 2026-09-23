@@ -25,7 +25,7 @@ jobs:
 
       - name: Run tests
         working-directory: server
-        run: npm ci && npm test
+        run: npm ci --ignore-scripts && npm test
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

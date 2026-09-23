@@ -8,6 +8,12 @@ services:
       - "net.unraid.docker.icon=https://raw.githubusercontent.com/ReXx09/Andys-Genussreise/main/kochbuch-icon.png"
     ports:
       - "${HOST_PORT:-1900}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     environment:
       - PORT=3000
       - DB_PATH=/data/database.sqlite
