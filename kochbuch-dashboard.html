@@ -1711,13 +1711,10 @@
 
   async function syncAllRecipesToApi() {
     if (!canEditData()) return;
-    await apiRequest('/recipes/reset', { method: 'POST' });
-    for (const recipe of state.recipes) {
-      await apiRequest('/recipes', {
-        method: 'POST',
-        body: JSON.stringify(recipe)
-      });
-    }
+    await apiRequest('/recipes/sync', {
+      method: 'POST',
+      body: JSON.stringify({ recipes: state.recipes })
+    });
     setPendingRecipeSync(false);
   }
 
@@ -1741,20 +1738,19 @@
 
   async function syncUserNutrientsToApi() {
     if (!backendMode || !canEditData()) return;
-    await apiRequest('/nutrients/reset', { method: 'POST' });
     const entries = Object.entries(loadUserNutrients());
-    for (const [name, val] of entries) {
-      await apiRequest('/nutrients', {
-        method: 'POST',
-        body: JSON.stringify({
+    await apiRequest('/nutrients/sync', {
+      method: 'POST',
+      body: JSON.stringify({
+        nutrients: entries.map(([name, val]) => ({
           name,
           kcal: Number(val?.kcal) || 0,
           protein: Number(val?.protein) || 0,
           carbs: Number(val?.carbs) || 0,
           fat: Number(val?.fat) || 0
-        })
-      });
-    }
+        }))
+      })
+    });
   }
 
   function scheduleBackendSync() {

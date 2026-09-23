@@ -148,6 +148,45 @@ function validatePayload(input) {
   return { ok: true };
 }
 
+function validateCompleteRecipePayload(input) {
+  const validation = validatePayload(input);
+  if (!validation.ok) return validation;
+  if (!Array.isArray(input.ingredients) || !Array.isArray(input.steps)) {
+    return { ok: false, error: 'ingredients und steps müssen als Arrays vorhanden sein' };
+  }
+  return { ok: true };
+}
+
+function recipeInsertStatement() {
+  return db.prepare(`
+    INSERT INTO recipes (
+      id, name, category, portions, prepTime, cookingTime, difficulty, tags,
+      folder_id, ingredients_json, steps_json, created_at, updated_at
+    ) VALUES (
+      @id, @name, @category, @portions, @prepTime, @cookingTime, @difficulty, @tags,
+      @folder_id, @ingredients, @steps, @created_at, @updated_at
+    )
+  `);
+}
+
+function recipeDbParams(recipe, now) {
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    category: recipe.category,
+    portions: recipe.portions,
+    prepTime: recipe.prepTime,
+    cookingTime: recipe.cookingTime,
+    difficulty: recipe.difficulty,
+    tags: recipe.tags,
+    folder_id: recipe.folderId,
+    ingredients: JSON.stringify(recipe.ingredients),
+    steps: JSON.stringify(recipe.steps),
+    created_at: now,
+    updated_at: now
+  };
+}
+
 function serializeRecipe(row) {
   return {
     id: row.id,
@@ -253,33 +292,37 @@ app.post('/api/recipes', requireAuth, (req, res) => {
   recipe.id = recipe.id || crypto.randomUUID();
 
   const now = new Date().toISOString();
-  const stmt = db.prepare(`
-    INSERT INTO recipes (
-      id, name, category, portions, prepTime, cookingTime, difficulty, tags,
-      folder_id, ingredients_json, steps_json, created_at, updated_at
-    ) VALUES (
-      @id, @name, @category, @portions, @prepTime, @cookingTime, @difficulty, @tags,
-      @folder_id, @ingredients, @steps, @created_at, @updated_at
-    )
-  `);
-
-  stmt.run({
-    id: recipe.id,
-    name: recipe.name,
-    category: recipe.category,
-    portions: recipe.portions,
-    prepTime: recipe.prepTime,
-    cookingTime: recipe.cookingTime,
-    difficulty: recipe.difficulty,
-    tags: recipe.tags,
-    folder_id: recipe.folderId,
-    ingredients: JSON.stringify(recipe.ingredients),
-    steps: JSON.stringify(recipe.steps),
-    created_at: now,
-    updated_at: now
-  });
+  recipeInsertStatement().run(recipeDbParams(recipe, now));
 
   res.status(201).json({ ...recipe, createdAt: now, updatedAt: now });
+});
+
+app.post('/api/recipes/sync', requireAuth, (req, res) => {
+  const recipes = Array.isArray(req.body?.recipes) ? req.body.recipes : null;
+  if (!recipes || recipes.length > 500) {
+    return res.status(400).json({ error: 'recipes muss ein Array mit maximal 500 Einträgen sein' });
+  }
+
+  const normalizedRecipes = [];
+  const ids = new Set();
+  for (const input of recipes) {
+    const validation = validateCompleteRecipePayload(input);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+    const recipe = normalizeRecipe(input);
+    recipe.id = recipe.id || crypto.randomUUID();
+    if (ids.has(recipe.id)) return res.status(400).json({ error: 'Rezept-IDs müssen eindeutig sein' });
+    ids.add(recipe.id);
+    normalizedRecipes.push(recipe);
+  }
+
+  const now = new Date().toISOString();
+  const replaceRecipes = db.transaction(() => {
+    db.prepare('DELETE FROM recipes').run();
+    const insert = recipeInsertStatement();
+    normalizedRecipes.forEach((recipe) => insert.run(recipeDbParams(recipe, now)));
+  });
+  replaceRecipes();
+  res.json({ ok: true, count: normalizedRecipes.length });
 });
 
 app.put('/api/recipes/:id', requireAuth, (req, res) => {
@@ -290,7 +333,7 @@ app.put('/api/recipes/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Rezept nicht gefunden' });
   }
 
-  const validation = validatePayload(req.body);
+  const validation = validateCompleteRecipePayload(req.body);
   if (!validation.ok) {
     return res.status(400).json({ error: validation.error });
   }
@@ -387,6 +430,35 @@ app.post('/api/nutrients', requireAuth, (req, res) => {
   });
 
   res.status(201).json({ ...nutrient, updatedAt: now });
+});
+
+app.post('/api/nutrients/sync', requireAuth, (req, res) => {
+  const nutrients = Array.isArray(req.body?.nutrients) ? req.body.nutrients : null;
+  if (!nutrients || nutrients.length > 1000) {
+    return res.status(400).json({ error: 'nutrients muss ein Array mit maximal 1000 Einträgen sein' });
+  }
+
+  const normalizedNutrients = [];
+  const names = new Set();
+  for (const input of nutrients) {
+    const nutrient = normalizeNutrient(input);
+    if (!nutrient.name) return res.status(400).json({ error: 'Name ist erforderlich' });
+    if (names.has(nutrient.name)) return res.status(400).json({ error: 'Nährwertnamen müssen eindeutig sein' });
+    names.add(nutrient.name);
+    normalizedNutrients.push(nutrient);
+  }
+
+  const now = new Date().toISOString();
+  const replaceNutrients = db.transaction(() => {
+    db.prepare('DELETE FROM nutrient_entries').run();
+    const insert = db.prepare(`
+      INSERT INTO nutrient_entries (name, kcal, protein, carbs, fat, updated_at)
+      VALUES (@name, @kcal, @protein, @carbs, @fat, @updated_at)
+    `);
+    normalizedNutrients.forEach((nutrient) => insert.run({ ...nutrient, updated_at: now }));
+  });
+  replaceNutrients();
+  res.json({ ok: true, count: normalizedNutrients.length });
 });
 
 app.delete('/api/nutrients/:name', requireAuth, (req, res) => {
