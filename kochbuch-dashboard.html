@@ -1205,6 +1205,12 @@
         </label>
         <button type="submit" class="secondary" id="saveUrlImportBtn">💾 Als Rezept übernehmen</button>
       </form>
+      <div id="urlImportProgress" class="hidden" role="status" aria-live="polite" style="margin-top:14px;">
+        <div style="height:4px; overflow:hidden; border-radius:4px; background:#e2e2e2;">
+          <div id="urlImportProgressBar" style="height:100%; width:0%; border-radius:4px; background:var(--primary, #d95a00); transition:width .35s ease;"></div>
+        </div>
+        <small id="urlImportProgressText" class="muted">Rezeptseite wird abgerufen...</small>
+      </div>
     </div>
   </div>
 
@@ -1470,6 +1476,9 @@
     urlImportInput: document.getElementById("urlImportInput"),
     fetchUrlImportBtn: document.getElementById("fetchUrlImportBtn"),
     urlImportFeedback: document.getElementById("urlImportFeedback"),
+    urlImportProgress: document.getElementById("urlImportProgress"),
+    urlImportProgressBar: document.getElementById("urlImportProgressBar"),
+    urlImportProgressText: document.getElementById("urlImportProgressText"),
     urlImportWarnings: document.getElementById("urlImportWarnings"),
     urlImportPreview: document.getElementById("urlImportPreview"),
     urlPreviewName: document.getElementById("urlPreviewName"),
@@ -3429,12 +3438,42 @@
     els.urlImportInput.value = "";
     els.urlImportFeedback.textContent = "";
     els.urlImportPreview.classList.add("hidden");
+    stopUrlImportProgress(false);
     els.urlImportModal.classList.add("open");
     els.urlImportInput.focus();
   }
 
   function closeUrlImportModal() {
     els.urlImportModal.classList.remove("open");
+  }
+
+  let urlImportProgressTimer = null;
+
+  function startUrlImportProgress() {
+    clearInterval(urlImportProgressTimer);
+    els.urlImportProgress.classList.remove("hidden");
+    els.urlImportProgressBar.style.width = "8%";
+    els.urlImportProgressText.textContent = "Rezeptseite wird abgerufen...";
+    let progress = 8;
+    urlImportProgressTimer = setInterval(() => {
+      progress = Math.min(progress + 7, 86);
+      els.urlImportProgressBar.style.width = `${progress}%`;
+      if (progress >= 50) {
+        els.urlImportProgressText.textContent = "Rezeptdaten werden verarbeitet...";
+      }
+    }, 700);
+  }
+
+  function stopUrlImportProgress(success) {
+    clearInterval(urlImportProgressTimer);
+    urlImportProgressTimer = null;
+    if (success) {
+      els.urlImportProgressBar.style.width = "100%";
+      els.urlImportProgressText.textContent = "Vorschau bereit.";
+      setTimeout(() => els.urlImportProgress.classList.add("hidden"), 500);
+    } else {
+      els.urlImportProgress.classList.add("hidden");
+    }
   }
 
   function renderUrlImportWarnings(sourceFields = {}) {
@@ -3484,15 +3523,20 @@
     els.fetchUrlImportBtn.disabled = true;
     els.urlImportFeedback.textContent = "Vorschau wird geladen...";
     els.urlImportPreview.classList.add("hidden");
+    startUrlImportProgress();
     try {
       const payload = await apiRequest('/recipes/import-preview', {
         method: 'POST',
         body: JSON.stringify({ url: els.urlImportInput.value.trim() })
       });
+      els.urlImportProgressBar.style.width = "92%";
+      els.urlImportProgressText.textContent = "Vorschau wird auf fehlende Angaben geprüft...";
       fillUrlImportPreview(payload.recipe || {});
       els.urlImportFeedback.textContent = "Bitte Angaben prüfen und bei Bedarf bearbeiten.";
+      stopUrlImportProgress(true);
     } catch (error) {
       els.urlImportFeedback.textContent = `⚠️ ${error.message || 'Vorschau konnte nicht geladen werden.'}`;
+      stopUrlImportProgress(false);
     } finally {
       els.fetchUrlImportBtn.disabled = false;
     }
