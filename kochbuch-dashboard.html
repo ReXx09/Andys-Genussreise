@@ -312,6 +312,21 @@
       padding-left: 12px;
       border-left: 1px solid var(--border);
     }
+    .folder-select-label {
+      display: grid;
+      gap: 6px;
+      margin: 4px 0 14px;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .folder-select-label select {
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
     .chip {
       border: 1px solid var(--border);
       background: #fff;
@@ -2588,67 +2603,23 @@
   // ============================================================
   function renderFolderList() {
     const folders = loadFolders();
-    let html = `
-      <div class="folder-item ${state.selectedFolderId === null ? 'active' : ''}" data-folder-id="null">
-        <span class="folder-name">📂 Alle Rezepte <span class="folder-count">${state.recipes.length}</span></span>
-      </div>
+    const options = [
+      `<option value="" ${state.selectedFolderId === null ? "selected" : ""}>📂 Alle Rezepte (${state.recipes.length})</option>`,
+      ...folders.map(folder => {
+        const count = state.recipes.filter(r => r.folderId === folder.id).length;
+        return `<option value="${escapeAttr(folder.id)}" ${state.selectedFolderId === folder.id ? "selected" : ""}>📁 ${escapeHtml(folder.name)} (${count})</option>`;
+      })
+    ].join("");
+
+    els.folderList.innerHTML = `
+      <label class="folder-select-label" for="folderSelect">Ordner auswählen
+        <select id="folderSelect" aria-label="Ordner auswählen">${options}</select>
+      </label>
     `;
-    folders.forEach(folder => {
-      const count = state.recipes.filter(r => r.folderId === folder.id).length;
-      const active = state.selectedFolderId === folder.id ? 'active' : '';
-      html += `
-        <div class="folder-item ${active}" data-folder-id="${folder.id}">
-          <span class="folder-name">📁 ${escapeHtml(folder.name)} <span class="folder-count">${count}</span></span>
-          <div class="folder-actions">
-            <button data-rename-folder="${folder.id}" title="Umbenennen">✏️</button>
-            <button data-delete-folder="${folder.id}" class="danger" title="Löschen">🗑️</button>
-          </div>
-        </div>
-      `;
-    });
-    els.folderList.innerHTML = html;
-
-    els.folderList.querySelectorAll('.folder-item[data-folder-id]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('button')) return;
-        const id = el.dataset.folderId;
-        state.selectedFolderId = id === 'null' ? null : id;
-        save();
-        renderFolderList();
-        renderRecipeList();
-      });
-    });
-
-    els.folderList.querySelectorAll('[data-rename-folder]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.renameFolder;
-        const folders = loadFolders();
-        const folder = folders.find(f => f.id === id);
-        if (!folder) return;
-        const newName = prompt('Neuer Ordnername:', folder.name);
-        if (newName && newName.trim()) {
-          renameFolder(id, newName.trim());
-          renderFolderList();
-          renderRecipeList();
-        }
-      });
-    });
-
-    els.folderList.querySelectorAll('[data-delete-folder]').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.deleteFolder;
-        const folders = loadFolders();
-        const folder = folders.find(f => f.id === id);
-        if (!folder) return;
-        const ok = await confirmAction(`Ordner "${folder.name}" wirklich löschen? Rezepte bleiben erhalten und erscheinen danach unter "Alle Rezepte".`);
-        if (!ok) return;
-        deleteFolder(id);
-        renderFolderList();
-        renderRecipeList();
-        showToast("Ordner gelöscht.", "info");
-      });
+    els.folderList.querySelector("#folderSelect")?.addEventListener("change", (event) => {
+      state.selectedFolderId = event.target.value || null;
+      save();
+      renderRecipeList();
     });
   }
 
