@@ -13,8 +13,8 @@
 
     body {
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-      background: #f7f4f0;
-      color: #1e1e1e;
+      background: var(--bg);
+      color: var(--text);
       line-height: 1.5;
       min-height: 100vh;
       overflow: hidden;
@@ -115,6 +115,77 @@
     }
     .nav-bar .refresh-feedback.show {
       opacity: 1;
+    }
+
+    body.dark-mode {
+      --bg: #17181b;
+      --card-bg: #24262b;
+      --text: #f1f3f5;
+      --text-muted: #b7bdc7;
+      --border: #41454d;
+      --shadow: 0 4px 16px rgba(0,0,0,0.28);
+      --shadow-hover: 0 8px 28px rgba(0,0,0,0.42);
+    }
+
+    body.dark-mode .nav-bar,
+    body.dark-mode .toolbar,
+    body.dark-mode .workspace-scroll-card,
+    body.dark-mode .nutrient-actions-nav {
+      background: rgba(31, 33, 38, 0.96);
+    }
+    body.dark-mode .chip,
+    body.dark-mode input,
+    body.dark-mode textarea,
+    body.dark-mode select,
+    body.dark-mode .nutrient-category-nav,
+    body.dark-mode .nutrient-group-nav,
+    body.dark-mode .nutrient-group-btn {
+      background: #2b2e34;
+      color: var(--text);
+    }
+    body.dark-mode .nutrient-card {
+      background: linear-gradient(180deg, #292c32, #22242a);
+      border-color: var(--border);
+    }
+    body.dark-mode .nutrient-cat-btn {
+      background: #3a3028;
+      color: #ffd2a6;
+      border-color: #6d5138;
+    }
+    body.dark-mode .folder-item,
+    body.dark-mode .recipe-card {
+      background: #292c32;
+    }
+    body.dark-mode .folder-item:hover,
+    body.dark-mode .recipe-card:hover,
+    body.dark-mode .nutrient-row-selectable:hover {
+      background: #343840;
+    }
+    body.dark-mode .recipe-card.active,
+    body.dark-mode .folder-item.active,
+    body.dark-mode .nutrient-row-selectable.active {
+      background: #3a3028;
+    }
+    body.dark-mode .recipe-card .kcal-badge,
+    body.dark-mode .recipe-card .folder-tag,
+    body.dark-mode .recipe-card .meta-pill,
+    body.dark-mode .folder-item .folder-count {
+      background: #3b3e45;
+      color: var(--text);
+      border-color: #50545d;
+    }
+    body.dark-mode table {
+      background: #24262b;
+    }
+    body.dark-mode th {
+      background: #30333a;
+    }
+    body.dark-mode td,
+    body.dark-mode th {
+      border-color: var(--border);
+    }
+    body.dark-mode button.ghost:hover {
+      background: rgba(255,255,255,0.08);
     }
 
     .url-recipe-comparison {
@@ -1056,6 +1127,7 @@
   <a href="#" data-view="nutrients">📊 Nährwerte verwalten</a>
   <span class="spacer"></span>
   <span id="authState" class="muted">🔓 Nur Lesen</span>
+  <button id="themeToggleBtn" class="ghost" aria-label="Darkmode umschalten">🌙 Darkmode</button>
   <button id="openLoginBtn" class="ghost">🔐 Login</button>
   <button id="logoutBtn" class="ghost hidden">🚪 Logout</button>
   <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
@@ -1492,6 +1564,7 @@
     openUrlImportBtn: document.getElementById("openUrlImportBtn"),
     printNavBtn: document.getElementById("printNavBtn"),
     authState: document.getElementById("authState"),
+    themeToggleBtn: document.getElementById("themeToggleBtn"),
     openLoginBtn: document.getElementById("openLoginBtn"),
     logoutBtn: document.getElementById("logoutBtn"),
     navLinks: document.querySelectorAll('.nav-bar [data-view]'),
@@ -1566,6 +1639,19 @@
     nutrientDeleteBottomBtn: null,
     ingredientSuggestions: document.getElementById("ingredientSuggestions")
   };
+
+  const THEME_KEY = "andys-kochbuch-theme";
+
+  function applyTheme(theme) {
+    const darkMode = theme === "dark";
+    document.body.classList.toggle("dark-mode", darkMode);
+    if (els.themeToggleBtn) {
+      els.themeToggleBtn.textContent = darkMode ? "☀️ Hellmodus" : "🌙 Darkmode";
+      els.themeToggleBtn.setAttribute("aria-pressed", String(darkMode));
+    }
+  }
+
+  applyTheme(localStorage.getItem(THEME_KEY) || "light");
 
   function configureBottomActionBar(options = {}) {
     if (!els.mobileActions) return;
@@ -4087,6 +4173,11 @@
   els.newFolderBtn.addEventListener("click", () => {
     if (!ensureEditAccess()) return;
     openFolderModal();
+  });
+  els.themeToggleBtn?.addEventListener("click", () => {
+    const darkMode = !document.body.classList.contains("dark-mode");
+    localStorage.setItem(THEME_KEY, darkMode ? "dark" : "light");
+    applyTheme(darkMode ? "dark" : "light");
   });
 
   els.filterChips?.querySelectorAll('[data-filter]').forEach(chip => {
