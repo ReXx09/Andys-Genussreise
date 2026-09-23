@@ -258,25 +258,40 @@ function findRecipeJsonLd(value) {
 }
 
 function parseRecipeInstructions(instructions) {
-  if (!Array.isArray(instructions)) return instructions ? [String(instructions)] : [];
-  return instructions.flatMap((step) => {
+  const values = Array.isArray(instructions) ? instructions : instructions ? [instructions] : [];
+  return values.flatMap((step) => {
     if (typeof step === 'string') return [step.trim()];
-    return step?.text ? [String(step.text).trim()] : [];
+    if (Array.isArray(step?.itemListElement)) return parseRecipeInstructions(step.itemListElement);
+    if (step?.text) return [String(step.text).trim()];
+    if (step?.item) return parseRecipeInstructions(step.item);
+    return [];
   }).filter(Boolean);
 }
 
 function parseIngredientText(value) {
   const text = clampString(value, 300).trim();
-  const match = text.match(/^([0-9]+(?:[,.][0-9]+)?|[0-9]+\/[0-9]+|[½¼¾])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
-  if (!match) return { name: text, amount: 0, unit: '' };
+  const match = text.match(/^((?:[0-9]+\s+)?[0-9]+\/[0-9]+|[0-9]+(?:[,.][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[,.][0-9]+)?)?|[½¼¾⅓⅔⅛⅜⅝⅞])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
+  if (!match) return { name: text, amount: text ? 1 : 0, unit: '' };
 
   const amountText = match[1];
-  const amount = amountText === '½' ? 0.5 : amountText === '¼' ? 0.25 : amountText === '¾' ? 0.75 : amountText.includes('/')
-    ? amountText.split('/').reduce((total, part) => total / Number(part), Number(amountText.split('/')[0]))
-    : Number(amountText.replace(',', '.'));
+  const fractionValues = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 0.125, '⅜': 0.375, '⅝': 0.625, '⅞': 0.875 };
+  const parseAmount = (raw) => {
+    const valueText = raw.trim();
+    if (fractionValues[valueText]) return fractionValues[valueText];
+    const mixed = valueText.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+    if (/^\d+\/\d+$/.test(valueText)) {
+      const [numerator, denominator] = valueText.split('/').map(Number);
+      return denominator ? numerator / denominator : NaN;
+    }
+    return Number(valueText.replace(',', '.'));
+  };
+  const range = amountText.split(/\s*[-–]\s*/).map(parseAmount);
+  const amount = range.length === 2 ? (range[0] + range[1]) / 2 : range[0];
   const unitAliases = {
-    kg: 'kg', g: 'g', gramm: 'g', ml: 'ml', l: 'l', el: 'el', tl: 'tl',
-    st: 'Stück', stk: 'Stück', stück: 'Stück', stücke: 'Stück', dose: 'Dose', dosen: 'Dose'
+    kg: 'kg', g: 'g', gramm: 'g', gramm: 'g', ml: 'ml', l: 'l', el: 'EL', esslöffel: 'EL', tl: 'TL', teelöffel: 'TL',
+    st: 'Stück', stk: 'Stück', stück: 'Stück', stücke: 'Stück', dose: 'Dose', dosen: 'Dose', packung: 'Packung', packungen: 'Packung',
+    pkg: 'Packung', prise: 'Prise', prisen: 'Prise', bund: 'Bund', bünde: 'Bund', zehe: 'Zehe', zehen: 'Zehe'
   };
   const candidateUnit = String(match[2] || '').replace('.', '').toLowerCase();
   const unit = unitAliases[candidateUnit] || '';
@@ -308,7 +323,7 @@ function parseRecipePage(html) {
         cookingTime: parseIsoDuration(recipe.cookTime),
         difficulty: 'mittel',
         tags: clampString(Array.isArray(recipe.keywords) ? recipe.keywords.join(', ') : recipe.keywords, 300),
-        ingredients: (Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : [])
+        ingredients: (Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : recipe.recipeIngredient ? [recipe.recipeIngredient] : [])
           .map((ingredient) => normalizeIngredient(parseIngredientText(ingredient))),
         steps: parseRecipeInstructions(recipe.recipeInstructions),
         sourceFields
@@ -439,9 +454,56 @@ app.post('/api/recipes/import-preview', requireAuth, async (req, res) => {
     if (!recipe) {
       return res.status(422).json({ error: 'Auf dieser Seite wurde kein strukturiertes Rezept gefunden.' });
     }
+    recipe.sourceUrl = url.toString();
+    recipe.sourceImportedAt = new Date().toISOString();
     res.json({ sourceUrl: url.toString(), recipe });
   } catch (error) {
     const message = error?.name === 'TimeoutError' ? 'Der Abruf der Rezeptseite hat zu lange gedauert.' : error?.message === 'response-too-large' ? 'Die Rezeptseite ist zu groß (max. 2 MB).' : 'Die Rezeptseite konnte nicht abgerufen werden.';
+    res.status(502).json({ error: message });
+  }
+});
+
+app.get('/api/nutrients/online-search', requireAuth, async (req, res) => {
+  const query = String(req.query?.q || '').trim().slice(0, 100);
+  const barcode = String(req.query?.barcode || '').trim();
+  if (barcode && !/^\d{8,14}$/.test(barcode)) {
+    return res.status(400).json({ error: 'Bitte einen gültigen 8- bis 14-stelligen Barcode eingeben.' });
+  }
+  if (!barcode && query.length < 2) {
+    return res.status(400).json({ error: 'Bitte mindestens zwei Zeichen für die Suche eingeben.' });
+  }
+
+  const searchUrl = barcode
+    ? `https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=code,product_name,product_name_de,generic_name,brands,nutriments`
+    : `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_de,generic_name,brands,nutriments`;
+  try {
+    const response = await fetch(searchUrl, {
+      signal: AbortSignal.timeout(10000),
+      headers: { 'User-Agent': 'AndysKochbuch/1.0 (personal recipe manager)' }
+    });
+    if (!response.ok) {
+      return res.status(502).json({ error: 'Die Online-Nährwertdatenbank ist derzeit nicht erreichbar.' });
+    }
+    const payload = await response.json();
+    const products = (barcode ? [payload.status === 1 ? payload.product : null] : (Array.isArray(payload.products) ? payload.products : []))
+      .filter(Boolean)
+      .map((product) => {
+        const nutriments = product.nutriments || {};
+        return {
+          id: String(product.code || ''),
+          name: String(product.product_name_de || product.product_name || product.generic_name || '').trim(),
+          brand: String(product.brands || '').trim(),
+          kcal: Number(nutriments['energy-kcal_100g']) || 0,
+          protein: Number(nutriments.proteins_100g) || 0,
+          carbs: Number(nutriments.carbohydrates_100g) || 0,
+          fat: Number(nutriments.fat_100g) || 0
+        };
+      })
+      .filter((product) => product.name)
+      .filter((product, index, all) => all.findIndex((item) => item.name.toLowerCase() === product.name.toLowerCase() && item.brand === product.brand) === index);
+    res.json({ query: barcode || query, products });
+  } catch (error) {
+    const message = error?.name === 'TimeoutError' ? 'Die Online-Nährwertsuche hat zu lange gedauert.' : 'Die Online-Nährwertdatenbank konnte nicht abgefragt werden.';
     res.status(502).json({ error: message });
   }
 });
@@ -650,10 +712,14 @@ app.get('*', (req, res) => {
   res.sendFile(join(rootDir, 'index.html'));
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Andys Genussreise läuft auf http://localhost:${port}`);
-  console.log(`SQLite Datenbank: ${dbPath}`);
-  if (!authPassword) {
-    console.warn('WARNUNG: KOCHBUCH_ADMIN_PASSWORD ist nicht gesetzt. Bearbeiten ist serverseitig gesperrt.');
-  }
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Andys Genussreise läuft auf http://localhost:${port}`);
+    console.log(`SQLite Datenbank: ${dbPath}`);
+    if (!authPassword) {
+      console.warn('WARNUNG: KOCHBUCH_ADMIN_PASSWORD ist nicht gesetzt. Bearbeiten ist serverseitig gesperrt.');
+    }
+  });
+}
+
+export { app, parseIngredientText, parseRecipePage };

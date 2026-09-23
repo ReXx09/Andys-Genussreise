@@ -117,6 +117,20 @@
       opacity: 1;
     }
 
+    .url-recipe-comparison {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+
+    @media (max-width: 700px) {
+      .url-recipe-comparison {
+        grid-template-columns: 1fr;
+      }
+    }
+
     /* ===== Main ===== */
     main {
       max-width: 1280px;
@@ -1124,6 +1138,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="onlineNutrientModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="onlineNutrientTitle">
+      <button class="close-btn" id="closeOnlineNutrientModal" aria-label="Online-Nährwertsuche schließen">✕</button>
+      <h2 id="onlineNutrientTitle">🌐 Online-Nährwertsuche</h2>
+      <p id="onlineNutrientQuery" class="muted"></p>
+      <form id="onlineBarcodeForm" style="display:flex; gap:8px; margin-bottom:10px;">
+        <input id="onlineNutrientBarcode" inputmode="numeric" autocomplete="off" placeholder="Barcode (optional)" aria-label="Barcode">
+        <button type="submit" class="secondary">Barcode suchen</button>
+      </form>
+      <div id="onlineNutrientResults" style="display:grid; gap:8px; max-height:420px; overflow-y:auto;"></div>
+      <p id="onlineNutrientFeedback" class="muted"></p>
+    </div>
+  </div>
+
   <!-- ===== MODAL FÜR ORDNER ===== -->
   <div class="modal-overlay" id="folderModal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
@@ -1209,7 +1237,10 @@
           </label>
           <button type="button" class="ghost" id="compareUrlRecipeBtn">↔ Vergleich anzeigen</button>
         </div>
-        <div id="urlRecipeComparison" class="hidden" style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; border-top:1px solid var(--border, #e0d6cb); padding-top:12px;"></div>
+        <div id="urlRecipeComparison" class="hidden url-recipe-comparison"></div>
+        <button type="button" class="secondary hidden" id="mergeUrlRecipeBtn">➕ Auswahl als neues Rezept übernehmen</button>
+        <button type="button" class="ghost hidden" id="updateComparedRecipeBtn">⚠️ Importauswahl im Kochbuchrezept aktualisieren</button>
+        <button type="button" class="ghost hidden" id="restoreMergeBackupBtn">↩️ Originalversion wiederherstellen</button>
         <button type="submit" class="secondary" id="saveUrlImportBtn">💾 Als Rezept übernehmen</button>
       </form>
       <div id="urlImportProgress" class="hidden" role="status" aria-live="polite" style="margin-top:14px;">
@@ -1450,6 +1481,13 @@
     newNutrientCarbs: document.getElementById("newNutrientCarbs"),
     newNutrientFat: document.getElementById("newNutrientFat"),
     nutrientFeedback: document.getElementById("nutrientFeedback"),
+    onlineNutrientModal: document.getElementById("onlineNutrientModal"),
+    closeOnlineNutrientModal: document.getElementById("closeOnlineNutrientModal"),
+    onlineNutrientQuery: document.getElementById("onlineNutrientQuery"),
+    onlineBarcodeForm: document.getElementById("onlineBarcodeForm"),
+    onlineNutrientBarcode: document.getElementById("onlineNutrientBarcode"),
+    onlineNutrientResults: document.getElementById("onlineNutrientResults"),
+    onlineNutrientFeedback: document.getElementById("onlineNutrientFeedback"),
     exportNavBtn: document.getElementById("exportNavBtn"),
     importNavFile: document.getElementById("importNavFile"),
     openUrlImportBtn: document.getElementById("openUrlImportBtn"),
@@ -1500,6 +1538,9 @@
     urlCompareRecipe: document.getElementById("urlCompareRecipe"),
     compareUrlRecipeBtn: document.getElementById("compareUrlRecipeBtn"),
     urlRecipeComparison: document.getElementById("urlRecipeComparison"),
+    mergeUrlRecipeBtn: document.getElementById("mergeUrlRecipeBtn"),
+    updateComparedRecipeBtn: document.getElementById("updateComparedRecipeBtn"),
+    restoreMergeBackupBtn: document.getElementById("restoreMergeBackupBtn"),
     saveUrlImportBtn: document.getElementById("saveUrlImportBtn"),
     cookModeModal: document.getElementById("cookModeModal"),
     cookModeContent: document.getElementById("cookModeContent"),
@@ -1766,6 +1807,8 @@
       cookingTime: String(recipe.cookingTime || ""),
       difficulty: String(recipe.difficulty || "mittel"),
       tags: String(recipe.tags || ""),
+      sourceUrl: String(recipe.sourceUrl || ""),
+      sourceImportedAt: String(recipe.sourceImportedAt || ""),
       folderId: recipe.folderId || null,
       favorite: !!recipe.favorite,
       ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : [createIngredient()],
@@ -2545,6 +2588,80 @@
     updatePrintArea(recipe);
   }
 
+  async function openOnlineNutrientSearch(index) {
+    if (!ensureEditAccess()) return;
+    const recipe = selectedRecipe();
+    const query = recipe?.ingredients?.[index]?.name?.trim();
+    if (!recipe || !query) {
+      showToast("Bitte zuerst einen Zutatenname eingeben.", "info");
+      return;
+    }
+    onlineNutrientTarget = { recipeId: recipe.id, index };
+    onlineNutrientProducts = [];
+    els.onlineNutrientQuery.textContent = `Suche nach "${query}" in Open Food Facts...`;
+    els.onlineNutrientResults.innerHTML = "<p class=\"muted\">Suche läuft...</p>";
+    els.onlineNutrientFeedback.textContent = "";
+    els.onlineNutrientModal.classList.add("open");
+    try {
+      const payload = await apiRequest(`/nutrients/online-search?q=${encodeURIComponent(query)}`);
+      onlineNutrientProducts = payload.products || [];
+      renderOnlineNutrientProducts();
+    } catch (error) {
+      els.onlineNutrientResults.innerHTML = "";
+      els.onlineNutrientFeedback.textContent = `⚠️ ${error.message || "Online-Suche fehlgeschlagen."}`;
+    }
+  }
+
+  function renderOnlineNutrientProducts() {
+    els.onlineNutrientResults.innerHTML = onlineNutrientProducts.length
+      ? onlineNutrientProducts.map((product, productIndex) => `<button type="button" class="ghost" data-online-result="${productIndex}" style="text-align:left;">
+          <strong>${escapeHtml(product.name)}</strong>${product.brand ? ` · ${escapeHtml(product.brand)}` : ""}<br />
+          <small>${product.kcal} kcal · P ${product.protein} g · K ${product.carbs} g · F ${product.fat} g pro 100 g</small>
+        </button>`).join("")
+      : "<p class=\"muted\">Keine passenden Produkte gefunden.</p>";
+  }
+
+  async function searchOnlineBarcode(event) {
+    event.preventDefault();
+    const barcode = els.onlineNutrientBarcode.value.trim();
+    els.onlineNutrientFeedback.textContent = "";
+    els.onlineNutrientResults.innerHTML = "<p class=\"muted\">Suche läuft...</p>";
+    try {
+      const payload = await apiRequest(`/nutrients/online-search?barcode=${encodeURIComponent(barcode)}`);
+      onlineNutrientProducts = payload.products || [];
+      els.onlineNutrientQuery.textContent = `Barcode: ${barcode}`;
+      renderOnlineNutrientProducts();
+    } catch (error) {
+      els.onlineNutrientResults.innerHTML = "";
+      els.onlineNutrientFeedback.textContent = `⚠️ ${error.message || "Barcode-Suche fehlgeschlagen."}`;
+    }
+  }
+
+  function closeOnlineNutrientModal() {
+    els.onlineNutrientModal.classList.remove("open");
+  }
+
+  function applyOnlineNutrient(productIndex) {
+    const product = onlineNutrientProducts[productIndex];
+    const recipe = state.recipes.find((item) => item.id === onlineNutrientTarget?.recipeId);
+    const ingredient = recipe?.ingredients?.[onlineNutrientTarget?.index];
+    if (!product || !recipe || !ingredient) return;
+    const userNutrients = loadUserNutrients();
+    const key = product.brand ? `${product.name} (${product.brand})` : product.name;
+    userNutrients[key] = { kcal: product.kcal, protein: product.protein, carbs: product.carbs, fat: product.fat };
+    saveUserNutrients(userNutrients);
+    refreshLibrary();
+    ingredient.nutrientKey = key;
+    ingredient.kcal = product.kcal;
+    ingredient.protein = product.protein;
+    ingredient.carbs = product.carbs;
+    ingredient.fat = product.fat;
+    save();
+    render();
+    closeOnlineNutrientModal();
+    showToast("Online-Nährwerte übernommen.");
+  }
+
   function renderIngredientRow(recipe, ingredient, index) {
     const nutrients = calculateIngredientNutrients(ingredient);
     const autoKey = ingredient.nutrientKey || findNutrientKey(ingredient.name);
@@ -2570,7 +2687,10 @@
           </div>
         </td>
         <td><strong>${formatNumber(nutrients.kcal)}</strong></td>
-        <td class="no-print"><button class="small danger" data-remove-ingredient="${index}">✕</button></td>
+        <td class="no-print">
+          <button class="small ghost" data-online-nutrient="${index}" title="Online-Nährwerte suchen">🌐</button>
+          <button class="small danger" data-remove-ingredient="${index}">✕</button>
+        </td>
       </tr>
     `;
   }
@@ -2682,6 +2802,10 @@
         save();
         updatePrintArea(recipe);
       });
+    });
+
+    els.editor.querySelectorAll('[data-online-nutrient]').forEach(button => {
+      button.addEventListener("click", () => openOnlineNutrientSearch(Number(button.dataset.onlineNutrient)));
     });
 
     // Lösch-Buttons
@@ -3450,6 +3574,9 @@
     els.urlImportPreview.classList.add("hidden");
     els.urlRecipeComparison.classList.add("hidden");
     els.urlRecipeComparison.innerHTML = "";
+    els.mergeUrlRecipeBtn.classList.add("hidden");
+    els.updateComparedRecipeBtn.classList.add("hidden");
+    updateMergeBackupUi();
     stopUrlImportProgress(false);
     els.urlImportModal.classList.add("open");
     els.urlImportInput.focus();
@@ -3459,8 +3586,20 @@
     els.urlImportModal.classList.remove("open");
   }
 
+  function updateMergeBackupUi() {
+    try {
+      const backup = JSON.parse(localStorage.getItem("kochbuch-merge-backup") || "null");
+      els.restoreMergeBackupBtn.classList.toggle("hidden", !backup?.recipe?.id);
+    } catch {
+      els.restoreMergeBackupBtn.classList.add("hidden");
+    }
+  }
+
   let urlImportProgressTimer = null;
   let urlImportRecipe = null;
+  let urlComparisonSelection = { imported: new Set(), cookbook: new Set(), importedSteps: new Set(), cookbookSteps: new Set() };
+  let onlineNutrientTarget = null;
+  let onlineNutrientProducts = [];
 
   function startUrlImportProgress() {
     clearInterval(urlImportProgressTimer);
@@ -3522,17 +3661,148 @@
     els.urlCompareRecipe.innerHTML = options.join("");
   }
 
-  function renderUrlComparisonRecipe(recipe, title) {
+  function normalizeComparisonIngredient(name) {
+    return String(name || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9äöüß]+/gi, " ")
+      .replace(/\b(frisch|gehackt|gewürfelt|geschnitten|optional|nach geschmack)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function buildIngredientComparison(importedRecipe, cookbookRecipe) {
+    const imported = importedRecipe.ingredients || [];
+    const cookbook = cookbookRecipe.ingredients || [];
+    const usedCookbookIndexes = new Set();
+    const matches = new Map();
+    const quantityDifferencesImported = new Set();
+    const quantityDifferencesCookbook = new Set();
+
+    imported.forEach((ingredient, importedIndex) => {
+      const source = normalizeComparisonIngredient(ingredient.name);
+      if (!source) return;
+      const exactIndex = cookbook.findIndex((candidate, index) => !usedCookbookIndexes.has(index) && normalizeComparisonIngredient(candidate.name) === source);
+      const partialIndex = exactIndex >= 0 ? exactIndex : cookbook.findIndex((candidate, index) => {
+        if (usedCookbookIndexes.has(index)) return false;
+        const target = normalizeComparisonIngredient(candidate.name);
+        return source.length >= 4 && target.length >= 4 && (source.includes(target) || target.includes(source));
+      });
+      if (partialIndex >= 0) {
+        usedCookbookIndexes.add(partialIndex);
+        matches.set(importedIndex, partialIndex);
+        if (!sameIngredientQuantity(imported[importedIndex], cookbook[partialIndex])) {
+          quantityDifferencesImported.add(importedIndex);
+          quantityDifferencesCookbook.add(partialIndex);
+        }
+      }
+    });
+    return { matches, matchedCount: matches.size, totalCount: imported.length, quantityDifferencesImported, quantityDifferencesCookbook };
+  }
+
+  function normalizedIngredientQuantity(ingredient) {
+    const amount = Number(ingredient?.amount);
+    const unit = String(ingredient?.unit || "").toLowerCase().replace(/[.\s]/g, "");
+    if (!Number.isFinite(amount) || amount === 0) return null;
+    if (unit === "kg") return { type: "mass", value: amount * 1000 };
+    if (["g", "gramm"].includes(unit)) return { type: "mass", value: amount };
+    if (unit === "l") return { type: "volume", value: amount * 1000 };
+    if (unit === "ml") return { type: "volume", value: amount };
+    if (unit === "el") return { type: "volume", value: amount * 15 };
+    if (unit === "tl") return { type: "volume", value: amount * 5 };
+    if (["stück", "stuck", "stk", "st"].includes(unit)) return { type: "pieces", value: amount };
+    return { type: unit || "unknown", value: amount };
+  }
+
+  function sameIngredientQuantity(first, second) {
+    const left = normalizedIngredientQuantity(first);
+    const right = normalizedIngredientQuantity(second);
+    return !!left && !!right && left.type === right.type && Math.abs(left.value - right.value) < 0.01;
+  }
+
+  function normalizeComparisonStep(step) {
+    return String(step || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function buildStepComparison(importedRecipe, cookbookRecipe) {
+    const imported = importedRecipe.steps || [];
+    const cookbook = cookbookRecipe.steps || [];
+    const usedCookbookIndexes = new Set();
+    const matchesImported = new Set();
+    const matchesCookbook = new Set();
+
+    imported.forEach((step, importedIndex) => {
+      const source = normalizeComparisonStep(step);
+      if (!source) return;
+      const sourceWords = new Set(source.split(" ").filter((word) => word.length > 3));
+      const matchIndex = cookbook.findIndex((candidate, candidateIndex) => {
+        if (usedCookbookIndexes.has(candidateIndex)) return false;
+        const target = normalizeComparisonStep(candidate);
+        if (target === source) return true;
+        const targetWords = new Set(target.split(" ").filter((word) => word.length > 3));
+        const sharedWords = [...sourceWords].filter((word) => targetWords.has(word)).length;
+        return sourceWords.size >= 2 && sharedWords / Math.max(sourceWords.size, targetWords.size) >= 0.5;
+      });
+      if (matchIndex >= 0) {
+        usedCookbookIndexes.add(matchIndex);
+        matchesImported.add(importedIndex);
+        matchesCookbook.add(matchIndex);
+      }
+    });
+    return { matchesImported, matchesCookbook };
+  }
+
+  function renderUrlComparisonRecipe(recipe, title, comparison, side) {
     const ingredients = (recipe.ingredients || []).map((ingredient) => [ingredient.amount, ingredient.unit, ingredient.name].filter(Boolean).join(" "));
     const steps = recipe.steps || [];
+    const matchedIndexes = side === "imported"
+      ? new Set(comparison ? [...comparison.matches.keys()] : [])
+      : new Set(comparison ? [...comparison.matches.values()] : []);
+    const quantityDifferences = side === "imported"
+      ? comparison?.quantityDifferencesImported || new Set()
+      : comparison?.quantityDifferencesCookbook || new Set();
+    const stepMatches = side === "imported"
+      ? comparison?.stepMatchesImported || new Set()
+      : comparison?.stepMatchesCookbook || new Set();
     return `<section style="border:1px solid var(--border, #e0d6cb); padding:10px; min-width:0;">
       <h3 style="margin-bottom:6px;">${escapeHtml(title)}</h3>
       <p class="muted">${escapeHtml(recipe.category || "Keine Kategorie")} · ${escapeHtml(recipe.portions || "?")} Portionen</p>
       <p><strong>Zubereitung:</strong> ${escapeHtml(recipe.prepTime || "-")} / ${escapeHtml(recipe.cookingTime || "-")}</p>
       <h4>Zutaten</h4>
-      <ul style="padding-left:18px; margin:4px 0 12px;">${ingredients.length ? ingredients.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>Keine Zutaten</li>"}</ul>
+      ${comparison ? `<p class="muted">Automatisch zugeordnet: ${comparison.matchedCount} von ${comparison.totalCount}</p>` : ""}
+      <ul style="padding-left:18px; margin:4px 0 12px;">${ingredients.length ? ingredients.map((item, index) => {
+        const matched = matchedIndexes.has(index);
+        const quantityDiffers = quantityDifferences.has(index);
+        const style = !matched ? "background:rgba(198,40,40,.14);" : quantityDiffers ? "background:rgba(217,139,40,.18);" : "background:rgba(46,125,50,.12);";
+        const marker = !matched ? "⚠️ fehlt im anderen Rezept" : quantityDiffers ? "⚠️ Menge abweichend" : "↔ zugeordnet";
+        const checked = urlComparisonSelection[side].has(index) ? "checked" : "";
+        return `<li style="${style} margin:3px 0; padding:3px 5px; border-radius:4px;">
+          <label style="display:flex; gap:6px; align-items:flex-start;">
+            <input type="checkbox" data-compare-kind="ingredient" data-compare-side="${side}" data-compare-index="${index}" ${checked} />
+            <span>${escapeHtml(item)} ${marker}</span>
+          </label>
+        </li>`;
+      }).join("") : "<li>Keine Zutaten</li>"}</ul>
       <h4>Schritte</h4>
-      <ol style="padding-left:20px; margin:4px 0;">${steps.length ? steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("") : "<li>Keine Schritte</li>"}</ol>
+      <ol style="padding-left:20px; margin:4px 0;">${steps.length ? steps.map((step, index) => {
+        const matched = stepMatches.has(index);
+        const style = matched ? "background:rgba(46,125,50,.12);" : "background:rgba(198,40,40,.14);";
+        const selectionKey = `${side}Steps`;
+        const checked = urlComparisonSelection[selectionKey].has(index) ? "checked" : "";
+        return `<li style="${style} margin:3px 0; padding:3px 5px; border-radius:4px;">
+          <label style="display:flex; gap:6px; align-items:flex-start;">
+            <input type="checkbox" data-compare-kind="step" data-compare-side="${side}" data-compare-index="${index}" ${checked} />
+            <span>${escapeHtml(step)} ${matched ? "↔ zugeordnet" : "⚠️ fehlt im anderen Rezept"}</span>
+          </label>
+        </li>`;
+      }).join("") : "<li>Keine Schritte</li>"}</ol>
     </section>`;
   }
 
@@ -3542,22 +3812,136 @@
       els.urlImportFeedback.textContent = "⚠️ Bitte zuerst ein Kochbuchrezept für den Vergleich auswählen.";
       return;
     }
+    const comparison = buildIngredientComparison(urlImportRecipe, selectedRecipe);
+    const stepComparison = buildStepComparison(urlImportRecipe, selectedRecipe);
+    comparison.stepMatchesImported = stepComparison.matchesImported;
+    comparison.stepMatchesCookbook = stepComparison.matchesCookbook;
+    urlComparisonSelection = {
+      imported: new Set((urlImportRecipe.ingredients || []).map((_, index) => index)),
+      cookbook: new Set(),
+      importedSteps: new Set((urlImportRecipe.steps || []).map((_, index) => index)),
+      cookbookSteps: new Set()
+    };
     els.urlRecipeComparison.innerHTML = [
-      renderUrlComparisonRecipe(urlImportRecipe, "Importierte Vorschau"),
-      renderUrlComparisonRecipe(selectedRecipe, "Kochbuchrezept")
+      renderUrlComparisonRecipe(urlImportRecipe, "Importierte Vorschau", comparison, "imported"),
+      renderUrlComparisonRecipe(selectedRecipe, "Kochbuchrezept", comparison, "cookbook")
     ].join("");
     els.urlRecipeComparison.classList.remove("hidden");
+    els.mergeUrlRecipeBtn.classList.remove("hidden");
+    els.updateComparedRecipeBtn.classList.remove("hidden");
+  }
+
+  function mergeSelectedUrlRecipe() {
+    const selectedRecipe = state.recipes.find((recipe) => recipe.id === els.urlCompareRecipe.value);
+    if (!urlImportRecipe || !selectedRecipe) {
+      els.urlImportFeedback.textContent = "⚠️ Bitte zuerst einen Vergleich anzeigen.";
+      return;
+    }
+    const importedIngredients = (urlImportRecipe.ingredients || [])
+      .filter((_, index) => urlComparisonSelection.imported.has(index))
+      .map((ingredient) => clone(ingredient));
+    const cookbookIngredients = (selectedRecipe.ingredients || [])
+      .filter((_, index) => urlComparisonSelection.cookbook.has(index))
+      .map((ingredient) => clone(ingredient));
+    const importedSteps = (urlImportRecipe.steps || []).filter((_, index) => urlComparisonSelection.importedSteps.has(index));
+    const cookbookSteps = (selectedRecipe.steps || []).filter((_, index) => urlComparisonSelection.cookbookSteps.has(index));
+    const mergedRecipe = normalizeRecipeForState({
+      ...clone(urlImportRecipe),
+      id: uid(),
+      name: `${urlImportRecipe.name || "Neues Rezept"} (Vergleich)`,
+      folderId: els.urlPreviewFolder.value || null,
+      ingredients: [...importedIngredients, ...cookbookIngredients],
+      steps: [...importedSteps, ...cookbookSteps]
+    });
+    state.recipes.unshift(mergedRecipe);
+    state.selectedId = mergedRecipe.id;
+    save();
+    render();
+    closeUrlImportModal();
+    showToast("Auswahl als neues Rezept übernommen.");
+  }
+
+  async function updateComparedRecipe() {
+    const selectedRecipe = state.recipes.find((recipe) => recipe.id === els.urlCompareRecipe.value);
+    if (!urlImportRecipe || !selectedRecipe) {
+      els.urlImportFeedback.textContent = "⚠️ Bitte zuerst einen Vergleich anzeigen.";
+      return;
+    }
+    const confirmed = await confirmAction(`Das Rezept "${selectedRecipe.name}" wird mit der Importauswahl aktualisiert. Nicht ausgewählte vorhandene Daten bleiben erhalten. Fortfahren?`);
+    if (!confirmed) return;
+
+    const backup = { savedAt: new Date().toISOString(), recipe: clone(selectedRecipe) };
+    localStorage.setItem("kochbuch-merge-backup", JSON.stringify(backup));
+    const ingredientComparison = buildIngredientComparison(urlImportRecipe, selectedRecipe);
+    const stepComparison = buildStepComparison(urlImportRecipe, selectedRecipe);
+    const updatedRecipe = clone(selectedRecipe);
+
+    (urlImportRecipe.ingredients || []).forEach((ingredient, importedIndex) => {
+      if (!urlComparisonSelection.imported.has(importedIndex)) return;
+      const cookbookIndex = ingredientComparison.matches.get(importedIndex);
+      if (cookbookIndex === undefined) updatedRecipe.ingredients.push(clone(ingredient));
+      else updatedRecipe.ingredients[cookbookIndex] = clone(ingredient);
+    });
+    (urlImportRecipe.steps || []).forEach((step, importedIndex) => {
+      if (!urlComparisonSelection.importedSteps.has(importedIndex)) return;
+      const cookbookIndex = [...stepComparison.matchesImported].indexOf(importedIndex);
+      const matchedCookbookIndex = cookbookIndex >= 0 ? [...stepComparison.matchesCookbook][cookbookIndex] : -1;
+      if (matchedCookbookIndex < 0) updatedRecipe.steps.push(step);
+      else updatedRecipe.steps[matchedCookbookIndex] = step;
+    });
+
+    state.recipes = state.recipes.map((recipe) => recipe.id === updatedRecipe.id ? normalizeRecipeForState(updatedRecipe) : recipe);
+    state.selectedId = updatedRecipe.id;
+    save();
+    render();
+    closeUrlImportModal();
+    showToast("Bestehendes Rezept aktualisiert. Original wurde gesichert.");
+  }
+
+  async function restoreMergeBackup() {
+    let backup;
+    try {
+      backup = JSON.parse(localStorage.getItem("kochbuch-merge-backup") || "null");
+    } catch {
+      backup = null;
+    }
+    if (!backup?.recipe?.id) {
+      showToast("Keine gesicherte Originalversion gefunden.", "info");
+      updateMergeBackupUi();
+      return;
+    }
+    const confirmed = await confirmAction(`Die gesicherte Originalversion von "${backup.recipe.name || "diesem Rezept"}" wiederherstellen?`);
+    if (!confirmed) return;
+    state.recipes = state.recipes.map((recipe) => recipe.id === backup.recipe.id ? normalizeRecipeForState(backup.recipe) : recipe);
+    state.selectedId = backup.recipe.id;
+    localStorage.removeItem("kochbuch-merge-backup");
+    save();
+    render();
+    updateMergeBackupUi();
+    closeUrlImportModal();
+    showToast("Originalversion wiederhergestellt.");
   }
 
   function parseImportedIngredientLine(value) {
     const text = String(value || "").trim();
-    const match = text.match(/^([0-9]+(?:[,.][0-9]+)?|[0-9]+\/[0-9]+|[½¼¾])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
-    if (!match) return { name: text, amount: 0, unit: "" };
+    const match = text.match(/^((?:[0-9]+\s+)?[0-9]+\/[0-9]+|[0-9]+(?:[,.][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[,.][0-9]+)?)?|[½¼¾⅓⅔⅛⅜⅝⅞])\s*([a-zA-ZäöüÄÖÜ]+\.?)?\s+(.+)$/);
+    if (!match) return { name: text, amount: text ? 1 : 0, unit: "" };
     const amountText = match[1];
-    const amount = amountText === "½" ? 0.5 : amountText === "¼" ? 0.25 : amountText === "¾" ? 0.75 : amountText.includes("/")
-      ? amountText.split("/").reduce((total, part) => total / Number(part), Number(amountText.split("/")[0]))
-      : Number(amountText.replace(",", "."));
-    const units = { kg: "kg", g: "g", gramm: "g", ml: "ml", l: "l", el: "el", tl: "tl", st: "Stück", stk: "Stück", stück: "Stück", stücke: "Stück", dose: "Dose", dosen: "Dose" };
+    const fractionValues = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875 };
+    const parseAmount = (raw) => {
+      const valueText = raw.trim();
+      if (fractionValues[valueText]) return fractionValues[valueText];
+      const mixed = valueText.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+      if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+      if (/^\d+\/\d+$/.test(valueText)) {
+        const [numerator, denominator] = valueText.split("/").map(Number);
+        return denominator ? numerator / denominator : NaN;
+      }
+      return Number(valueText.replace(",", "."));
+    };
+    const range = amountText.split(/\s*[-–]\s*/).map(parseAmount);
+    const amount = range.length === 2 ? (range[0] + range[1]) / 2 : range[0];
+    const units = { kg: "kg", g: "g", gramm: "g", ml: "ml", l: "l", el: "EL", esslöffel: "EL", tl: "TL", teelöffel: "TL", st: "Stück", stk: "Stück", stück: "Stück", stücke: "Stück", dose: "Dose", dosen: "Dose", packung: "Packung", packungen: "Packung", pkg: "Packung", prise: "Prise", prisen: "Prise", bund: "Bund", bünde: "Bund", zehe: "Zehe", zehen: "Zehe" };
     const candidateUnit = String(match[2] || "").replace(".", "").toLowerCase();
     const unit = units[candidateUnit] || "";
     return {
@@ -3632,6 +4016,8 @@
       cookingTime: els.urlPreviewCookingTime.value.trim(),
       difficulty: "mittel",
       tags: els.urlPreviewTags.value.trim(),
+      sourceUrl: urlImportRecipe?.sourceUrl || "",
+      sourceImportedAt: urlImportRecipe?.sourceImportedAt || "",
       favorite: false,
       folderId: els.urlPreviewFolder.value || null,
       ingredients,
@@ -3787,6 +4173,19 @@
   els.urlImportForm?.addEventListener("submit", fetchUrlImportPreview);
   els.urlImportPreview?.addEventListener("submit", saveUrlImport);
   els.compareUrlRecipeBtn?.addEventListener("click", showUrlRecipeComparison);
+  els.mergeUrlRecipeBtn?.addEventListener("click", mergeSelectedUrlRecipe);
+  els.updateComparedRecipeBtn?.addEventListener("click", updateComparedRecipe);
+  els.restoreMergeBackupBtn?.addEventListener("click", restoreMergeBackup);
+  els.urlRecipeComparison?.addEventListener("change", (event) => {
+    const input = event.target.closest('[data-compare-kind][data-compare-side][data-compare-index]');
+    if (!input) return;
+    const side = input.dataset.compareSide;
+    const kind = input.dataset.compareKind;
+    const index = Number(input.dataset.compareIndex);
+    const selectionKey = kind === "step" ? `${side}Steps` : side;
+    if (input.checked) urlComparisonSelection[selectionKey].add(index);
+    else urlComparisonSelection[selectionKey].delete(index);
+  });
 
   // Modal schließen (Nährstoffe)
   els.closeNutrientModal.addEventListener("click", closeNutrientModal);
@@ -3794,6 +4193,15 @@
     if (e.target === els.nutrientModal) closeNutrientModal();
   });
   els.nutrientModal.addEventListener("keydown", (e) => trapModalFocus(e, els.nutrientModal));
+
+  els.closeOnlineNutrientModal.addEventListener("click", closeOnlineNutrientModal);
+  els.onlineBarcodeForm.addEventListener("submit", searchOnlineBarcode);
+  els.onlineNutrientModal.addEventListener("click", (e) => {
+    if (e.target === els.onlineNutrientModal) closeOnlineNutrientModal();
+    const result = e.target.closest('[data-online-result]');
+    if (result) applyOnlineNutrient(Number(result.dataset.onlineResult));
+  });
+  els.onlineNutrientModal.addEventListener("keydown", (e) => trapModalFocus(e, els.onlineNutrientModal));
 
   // Modal schließen (Ordner)
   els.closeFolderModal.addEventListener("click", closeFolderModal);
