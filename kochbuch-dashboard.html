@@ -1795,6 +1795,33 @@
     return text ? JSON.parse(text) : null;
   }
 
+  function sendAuditEvent(type, details) {
+    void apiRequest('/audit', {
+      method: 'POST',
+      body: JSON.stringify({ type, details })
+    }).catch(() => {});
+  }
+
+  const auditTimers = new Map();
+  function queueAuditInput(target) {
+    if (!canEditData() || !target?.closest("#editor")) return;
+    const recipe = selectedRecipe();
+    if (!recipe) return;
+    const key = `${recipe.id}:${target.dataset.field || "unknown"}:${target.dataset.ingredient ?? "recipe"}`;
+    clearTimeout(auditTimers.get(key));
+    auditTimers.set(key, setTimeout(() => {
+      const rawValue = target.type === "password" ? "[redacted]" : String(target.value || "").slice(0, 160);
+      sendAuditEvent('editor-input', {
+        recipeId: recipe.id,
+        recipeName: String(recipe.name || "").slice(0, 120),
+        field: target.dataset.field || "unknown",
+        ingredientIndex: target.dataset.ingredient ?? null,
+        value: rawValue
+      });
+      auditTimers.delete(key);
+    }, 500));
+  }
+
   function normalizeRecipeForState(recipe) {
     return {
       ...recipe,
@@ -4055,6 +4082,17 @@
     });
   });
 
+  document.addEventListener("input", (event) => queueAuditInput(event.target));
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    const recipe = selectedRecipe();
+    if (!button || !recipe || !canEditData() || !button.closest("#editor")) return;
+    sendAuditEvent('editor-action', {
+      recipeId: recipe.id,
+      recipeName: String(recipe.name || "").slice(0, 120),
+      action: button.id || button.dataset.removeIngredient || button.dataset.removeStep || button.textContent.trim().slice(0, 80)
+    });
+  });
   els.openUrlImportBtn?.addEventListener("click", openUrlImportModal);
   els.printNavBtn.addEventListener("click", () => window.print());
 

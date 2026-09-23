@@ -224,7 +224,14 @@ function normalizeNutrient(input) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, database: dbPath });
+  res.json({ ok: true, database: dbPath, version: appVersion, commit: vcsRef, build: buildDate });
+});
+
+app.post('/api/audit', requireAuth, (req, res) => {
+  const type = clampString(req.body?.type, 80) || 'unknown';
+  const details = req.body?.details && typeof req.body.details === 'object' ? req.body.details : {};
+  console.log(`[audit] ${JSON.stringify({ at: new Date().toISOString(), type, ...details })}`);
+  res.status(204).end();
 });
 
 app.get('/api/auth/status', (req, res) => {
