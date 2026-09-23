@@ -5,6 +5,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -234,6 +236,119 @@ function normalizeNutrient(input) {
   };
 }
 
+function parseIsoDuration(value) {
+  const match = String(value || '').match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/i);
+  if (!match) return '';
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  if (!hours && !minutes) return '';
+  return `${hours ? `${hours} Std. ` : ''}${minutes ? `${minutes} Min.` : ''}`.trim();
+}
+
+function findRecipeJsonLd(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return value.map(findRecipeJsonLd).find(Boolean) || null;
+  }
+  if (typeof value !== 'object') return null;
+  const types = Array.isArray(value['@type']) ? value['@type'] : [value['@type']];
+  if (types.some((type) => String(type || '').toLowerCase() === 'recipe')) return value;
+  if (Array.isArray(value['@graph'])) return findRecipeJsonLd(value['@graph']);
+  return null;
+}
+
+function parseRecipeInstructions(instructions) {
+  if (!Array.isArray(instructions)) return instructions ? [String(instructions)] : [];
+  return instructions.flatMap((step) => {
+    if (typeof step === 'string') return [step.trim()];
+    return step?.text ? [String(step.text).trim()] : [];
+  }).filter(Boolean);
+}
+
+function parseRecipePage(html) {
+  const scripts = [...String(html).matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  for (const match of scripts) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      const recipe = findRecipeJsonLd(parsed);
+      if (!recipe?.name) continue;
+      const sourceFields = {
+        category: Boolean(recipe.recipeCategory),
+        portions: Boolean(recipe.recipeYield),
+        prepTime: Boolean(recipe.prepTime),
+        cookingTime: Boolean(recipe.cookTime),
+        tags: Boolean(recipe.keywords),
+        ingredients: Array.isArray(recipe.recipeIngredient) && recipe.recipeIngredient.length > 0,
+        steps: Array.isArray(recipe.recipeInstructions) && recipe.recipeInstructions.length > 0
+      };
+      return {
+        name: clampString(recipe.name, 256),
+        category: clampString(Array.isArray(recipe.recipeCategory) ? recipe.recipeCategory[0] : recipe.recipeCategory, 100),
+        portions: Math.max(1, Number.parseInt(String(recipe.recipeYield || '').match(/\d+/)?.[0] || '4', 10)),
+        prepTime: parseIsoDuration(recipe.prepTime),
+        cookingTime: parseIsoDuration(recipe.cookTime),
+        difficulty: 'mittel',
+        tags: clampString(Array.isArray(recipe.keywords) ? recipe.keywords.join(', ') : recipe.keywords, 300),
+        ingredients: (Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : [])
+          .map((ingredient) => normalizeIngredient({ name: ingredient, amount: 0, unit: '' })),
+        steps: parseRecipeInstructions(recipe.recipeInstructions),
+        sourceFields
+      };
+    } catch {
+      // Try the next JSON-LD block when a page contains malformed metadata.
+    }
+  }
+  return null;
+}
+
+function isPrivateAddress(address) {
+  if (net.isIP(address) === 4) {
+    return /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address);
+  }
+  const normalized = address.toLowerCase();
+  return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+}
+
+async function validateImportUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(String(rawUrl || '').trim());
+  } catch {
+    return null;
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) return null;
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname === '::1' || hostname.endsWith('.local') ||
+      /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) {
+    return null;
+  }
+  try {
+    const addresses = net.isIP(hostname) ? [hostname] : (await dns.lookup(hostname, { all: true })).map((entry) => entry.address);
+    if (addresses.some(isPrivateAddress)) return null;
+  } catch {
+    return null;
+  }
+  return url;
+}
+
+async function readLimitedResponse(response, maxBytes) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error('response-too-large');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, database: dbPath });
 });
@@ -276,6 +391,40 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
     authSessions.delete(token);
   }
   res.json({ ok: true });
+});
+
+app.post('/api/recipes/import-preview', requireAuth, async (req, res) => {
+  const url = await validateImportUrl(req.body?.url);
+  if (!url) {
+    return res.status(400).json({ error: 'Bitte eine öffentliche HTTP- oder HTTPS-Rezept-URL angeben.' });
+  }
+
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      redirect: 'manual',
+      headers: { 'User-Agent': 'AndysKochbuchRecipeImporter/1.0' }
+    });
+    if (response.status >= 300 && response.status < 400) {
+      return res.status(422).json({ error: 'Die Rezeptseite leitet weiter. Bitte den endgültigen Link verwenden.' });
+    }
+    if (!response.ok) {
+      return res.status(502).json({ error: `Die Rezeptseite antwortet mit HTTP ${response.status}.` });
+    }
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > 2_000_000) {
+      return res.status(413).json({ error: 'Die Rezeptseite ist zu groß (max. 2 MB).' });
+    }
+    const html = await readLimitedResponse(response, 2_000_000);
+    const recipe = parseRecipePage(html);
+    if (!recipe) {
+      return res.status(422).json({ error: 'Auf dieser Seite wurde kein strukturiertes Rezept gefunden.' });
+    }
+    res.json({ sourceUrl: url.toString(), recipe });
+  } catch (error) {
+    const message = error?.name === 'TimeoutError' ? 'Der Abruf der Rezeptseite hat zu lange gedauert.' : error?.message === 'response-too-large' ? 'Die Rezeptseite ist zu groß (max. 2 MB).' : 'Die Rezeptseite konnte nicht abgerufen werden.';
+    res.status(502).json({ error: message });
+  }
 });
 
 app.get('/api/recipes', (req, res) => {

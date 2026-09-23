@@ -1046,6 +1046,7 @@
   <label class="button-link ghost" for="importNavFile">⬆️ Import
     <input id="importNavFile" type="file" accept=".json,application/json" class="hidden" />
   </label>
+  <button id="openUrlImportBtn" class="ghost">🌐 URL-Import</button>
   <button id="printNavBtn" class="ghost">🖨️ Drucken</button>
 </nav>
 
@@ -1162,6 +1163,44 @@
         </label>
         <p id="loginFeedback" class="muted"></p>
         <button type="submit">Anmelden</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="urlImportModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="urlImportTitle" style="max-width: min(94vw, 860px);">
+      <button class="close-btn" id="closeUrlImportModal" aria-label="URL-Import schließen">✕</button>
+      <h2 id="urlImportTitle">🌐 Rezept von URL importieren</h2>
+      <p class="muted">Die Seite wird nach strukturierten Rezeptdaten durchsucht. Prüfe und bearbeite die Vorschau vor dem Speichern.</p>
+      <form id="urlImportForm" style="display:grid; gap:10px; margin-top:12px;">
+        <label>Rezept-Link
+          <input type="url" id="urlImportInput" placeholder="https://beispiel.de/rezept" required />
+        </label>
+        <button type="submit" class="secondary" id="fetchUrlImportBtn">🔎 Vorschau laden</button>
+      </form>
+      <p id="urlImportFeedback" class="muted"></p>
+      <form id="urlImportPreview" class="hidden" style="display:grid; gap:10px; margin-top:12px;">
+        <div id="urlImportWarnings" class="muted" style="border-left:4px solid #d98b28; padding:8px 12px; background:rgba(217,139,40,.1);"></div>
+        <div class="inline-grid">
+          <label>Rezeptname <input id="urlPreviewName" required /></label>
+          <label>Kategorie <input id="urlPreviewCategory" /></label>
+          <label>Portionen <input id="urlPreviewPortions" type="number" min="1" step="1" /></label>
+        </div>
+        <div class="inline-grid">
+          <label>Zubereitungszeit <input id="urlPreviewPrepTime" /></label>
+          <label>Kochzeit <input id="urlPreviewCookingTime" /></label>
+          <label>Tags <input id="urlPreviewTags" /></label>
+        </div>
+        <label>Zutaten, je eine Zeile
+          <textarea id="urlPreviewIngredients" rows="7"></textarea>
+        </label>
+        <label>Zubereitungsschritte, je eine Zeile
+          <textarea id="urlPreviewSteps" rows="7"></textarea>
+        </label>
+        <label>Ordner im Kochbuch
+          <select id="urlPreviewFolder"></select>
+        </label>
+        <button type="submit" class="secondary" id="saveUrlImportBtn">💾 Als Rezept übernehmen</button>
       </form>
     </div>
   </div>
@@ -1397,6 +1436,7 @@
     nutrientFeedback: document.getElementById("nutrientFeedback"),
     exportNavBtn: document.getElementById("exportNavBtn"),
     importNavFile: document.getElementById("importNavFile"),
+    openUrlImportBtn: document.getElementById("openUrlImportBtn"),
     printNavBtn: document.getElementById("printNavBtn"),
     authState: document.getElementById("authState"),
     openLoginBtn: document.getElementById("openLoginBtn"),
@@ -1421,6 +1461,24 @@
     loginForm: document.getElementById("loginForm"),
     loginPassword: document.getElementById("loginPassword"),
     loginFeedback: document.getElementById("loginFeedback"),
+    urlImportModal: document.getElementById("urlImportModal"),
+    closeUrlImportModal: document.getElementById("closeUrlImportModal"),
+    urlImportForm: document.getElementById("urlImportForm"),
+    urlImportInput: document.getElementById("urlImportInput"),
+    fetchUrlImportBtn: document.getElementById("fetchUrlImportBtn"),
+    urlImportFeedback: document.getElementById("urlImportFeedback"),
+    urlImportWarnings: document.getElementById("urlImportWarnings"),
+    urlImportPreview: document.getElementById("urlImportPreview"),
+    urlPreviewName: document.getElementById("urlPreviewName"),
+    urlPreviewCategory: document.getElementById("urlPreviewCategory"),
+    urlPreviewPortions: document.getElementById("urlPreviewPortions"),
+    urlPreviewPrepTime: document.getElementById("urlPreviewPrepTime"),
+    urlPreviewCookingTime: document.getElementById("urlPreviewCookingTime"),
+    urlPreviewTags: document.getElementById("urlPreviewTags"),
+    urlPreviewIngredients: document.getElementById("urlPreviewIngredients"),
+    urlPreviewSteps: document.getElementById("urlPreviewSteps"),
+    urlPreviewFolder: document.getElementById("urlPreviewFolder"),
+    saveUrlImportBtn: document.getElementById("saveUrlImportBtn"),
     cookModeModal: document.getElementById("cookModeModal"),
     cookModeContent: document.getElementById("cookModeContent"),
     closeCookModeModal: document.getElementById("closeCookModeModal"),
@@ -3363,6 +3421,84 @@
     reader.readAsText(file);
   }
 
+  function openUrlImportModal() {
+    if (!ensureEditAccess()) return;
+    els.urlImportInput.value = "";
+    els.urlImportFeedback.textContent = "";
+    els.urlImportPreview.classList.add("hidden");
+    els.urlImportModal.classList.add("open");
+    els.urlImportInput.focus();
+  }
+
+  function closeUrlImportModal() {
+    els.urlImportModal.classList.remove("open");
+  }
+
+  function fillUrlImportPreview(recipe) {
+    els.urlPreviewName.value = recipe.name || "";
+    els.urlPreviewCategory.value = recipe.category || "";
+    els.urlPreviewPortions.value = recipe.portions || 4;
+    els.urlPreviewPrepTime.value = recipe.prepTime || "";
+    els.urlPreviewCookingTime.value = recipe.cookingTime || "";
+    els.urlPreviewTags.value = recipe.tags || "";
+    els.urlPreviewIngredients.value = (recipe.ingredients || []).map((ingredient) => ingredient.name || "").filter(Boolean).join("\n");
+    els.urlPreviewSteps.value = (recipe.steps || []).join("\n");
+    els.urlImportPreview.classList.remove("hidden");
+  }
+
+  async function fetchUrlImportPreview(event) {
+    event.preventDefault();
+    if (!ensureEditAccess()) return;
+    els.fetchUrlImportBtn.disabled = true;
+    els.urlImportFeedback.textContent = "Vorschau wird geladen...";
+    els.urlImportPreview.classList.add("hidden");
+    try {
+      const payload = await apiRequest('/recipes/import-preview', {
+        method: 'POST',
+        body: JSON.stringify({ url: els.urlImportInput.value.trim() })
+      });
+      fillUrlImportPreview(payload.recipe || {});
+      els.urlImportFeedback.textContent = "Bitte Angaben prüfen und bei Bedarf bearbeiten.";
+    } catch (error) {
+      els.urlImportFeedback.textContent = `⚠️ ${error.message || 'Vorschau konnte nicht geladen werden.'}`;
+    } finally {
+      els.fetchUrlImportBtn.disabled = false;
+    }
+  }
+
+  function saveUrlImport(event) {
+    event.preventDefault();
+    if (!ensureEditAccess()) return;
+    const name = normalizeText(els.urlPreviewName.value);
+    if (!name) {
+      els.urlImportFeedback.textContent = "⚠️ Bitte einen Rezeptnamen eingeben.";
+      return;
+    }
+    const ingredients = els.urlPreviewIngredients.value.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
+      .map((name) => ({ name, amount: 0, unit: "", nutrientKey: "", kcal: 0, protein: 0, carbs: 0, fat: 0 }));
+    const steps = els.urlPreviewSteps.value.split(/\r?\n/).map((step) => step.trim()).filter(Boolean);
+    const recipe = normalizeRecipeForState({
+      id: uid(),
+      name,
+      category: els.urlPreviewCategory.value.trim() || "Hauptgericht",
+      portions: Number(els.urlPreviewPortions.value) || 4,
+      prepTime: els.urlPreviewPrepTime.value.trim(),
+      cookingTime: els.urlPreviewCookingTime.value.trim(),
+      difficulty: "mittel",
+      tags: els.urlPreviewTags.value.trim(),
+      favorite: false,
+      folderId: state.selectedFolderId,
+      ingredients,
+      steps
+    });
+    state.recipes.unshift(recipe);
+    state.selectedId = recipe.id;
+    save();
+    render();
+    closeUrlImportModal();
+    showToast("Rezept aus der Vorschau übernommen.");
+  }
+
   // ============================================================
   //  12. AKTUALISIEREN (Refresh)
   // ============================================================
@@ -3447,6 +3583,7 @@
     if (file) importData(file);
     e.target.value = "";
   });
+  els.openUrlImportBtn?.addEventListener("click", openUrlImportModal);
   els.printNavBtn.addEventListener("click", () => window.print());
 
   // Refresh-Button
@@ -3496,6 +3633,13 @@
       els.loginFeedback.textContent = `⚠️ ${error.message || 'Login fehlgeschlagen.'}`;
     }
   });
+  els.closeUrlImportModal?.addEventListener("click", closeUrlImportModal);
+  els.urlImportModal?.addEventListener("click", (e) => {
+    if (e.target === els.urlImportModal) closeUrlImportModal();
+  });
+  els.urlImportModal?.addEventListener("keydown", (e) => trapModalFocus(e, els.urlImportModal));
+  els.urlImportForm?.addEventListener("submit", fetchUrlImportPreview);
+  els.urlImportPreview?.addEventListener("submit", saveUrlImport);
 
   // Modal schließen (Nährstoffe)
   els.closeNutrientModal.addEventListener("click", closeNutrientModal);
