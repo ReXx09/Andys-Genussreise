@@ -2984,7 +2984,7 @@
     return `
       <tr class="ingredient-row">
         <td>
-          <input data-ingredient="${index}" data-field="name" value="${escapeAttr(ingredient.name)}" placeholder="z.B. Reis" list="ingredientSuggestions" autocomplete="off" />
+          <input data-ingredient="${index}" data-field="name" value="${escapeAttr(ingredient.name)}" title="${escapeAttr(ingredient.name)}" placeholder="z.B. Reis" list="ingredientSuggestions" autocomplete="off" />
           <div class="muted">${libraryNote}</div>
         </td>
         <td><input data-ingredient="${index}" data-field="amount" type="number" min="0" step="1" value="${escapeAttr(ingredient.amount)}" class="short" /></td>
@@ -3060,6 +3060,7 @@
         } else {
           ingredient[field] = input.value;
         }
+        if (field === "name") input.title = input.value;
 
         if (field === "name") {
           const found = getNutrientValues(ingredient.name);
