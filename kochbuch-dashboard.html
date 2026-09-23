@@ -2753,8 +2753,7 @@
   function bindEditorEvents(recipe) {
     const editable = canEditData();
     if (!editable) {
-      els.editor.querySelectorAll('input, textarea, select, button').forEach((element) => {
-        if (element.id === 'cookModeBtn') return;
+      els.editor.querySelectorAll('input, textarea, select').forEach((element) => {
         element.disabled = true;
       });
     }
