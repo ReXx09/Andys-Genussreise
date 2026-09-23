@@ -316,18 +316,34 @@ app.get('/api/nutrients/online-search', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Bitte mindestens zwei Zeichen für die Suche eingeben.' });
   }
 
-  const searchUrl = barcode
-    ? `https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=code,product_name,product_name_de,generic_name,brands,nutriments`
-    : `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_de,generic_name,brands,nutriments`;
+  const searchPath = barcode
+    ? `/api/v2/product/${barcode}.json?fields=code,product_name,product_name_de,generic_name,brands,nutriments`
+    : `/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_de,generic_name,brands,nutriments`;
   try {
-    const response = await fetch(searchUrl, {
-      signal: AbortSignal.timeout(10000),
-      headers: { 'User-Agent': 'AndysKochbuch/1.0 (personal recipe manager)' }
-    });
-    if (!response.ok) {
-      return res.status(502).json({ error: 'Die Online-Nährwertdatenbank ist derzeit nicht erreichbar.' });
+    let response;
+    let payload;
+    let lastError;
+    for (const host of ['world.openfoodfacts.org', 'de.openfoodfacts.org']) {
+      try {
+        response = await fetch(`https://${host}${searchPath}`, {
+          signal: AbortSignal.timeout(8000),
+          headers: { 'User-Agent': 'AndysKochbuch/1.0 (personal recipe manager)' }
+        });
+        if (response.ok) {
+          payload = await response.json();
+          break;
+        }
+        lastError = new Error(`Open Food Facts antwortet mit HTTP ${response.status}.`);
+      } catch (error) {
+        lastError = error;
+      }
     }
-    const payload = await response.json();
+    if (!payload) {
+      if (barcode && response?.status === 404) {
+        return res.json({ query: barcode, products: [] });
+      }
+      throw lastError || new Error('Open Food Facts ist nicht erreichbar.');
+    }
     const products = (barcode ? [payload.status === 1 ? payload.product : null] : (Array.isArray(payload.products) ? payload.products : []))
       .filter(Boolean)
       .map((product) => {
