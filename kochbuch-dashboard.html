@@ -293,6 +293,12 @@
       gap: 8px;
       margin: 8px 0 4px;
     }
+    .recipe-toolbar-filters {
+      align-items: center;
+      margin: 0 0 0 4px;
+      padding-left: 12px;
+      border-left: 1px solid var(--border);
+    }
     .chip {
       border: 1px solid var(--border);
       background: #fff;
@@ -1176,6 +1182,12 @@
         padding: 8px 4px 7px;
         font-size: 0.8rem;
       }
+      .recipe-toolbar-filters {
+        flex-basis: 100%;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: 0;
+      }
       main {
           height: calc(100vh - 154px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
         grid-template-rows: auto 1fr auto;
@@ -1249,6 +1261,13 @@
     <div class="toolbar-left">
       <button id="newRecipeBtn">➕ Neu</button>
       <button id="newFolderBtn" class="secondary">📁 Ordner</button>
+        <div class="filter-chips recipe-toolbar-filters" id="filterChips" aria-label="Rezeptfilter">
+          <button class="chip active" data-filter="all">Alle</button>
+          <button class="chip" data-filter="favorites">Favoriten</button>
+          <button class="chip" data-filter="leicht">Leicht</button>
+          <button class="chip" data-filter="mittel">Mittel</button>
+          <button class="chip" data-filter="schwer">Schwer</button>
+        </div>
     </div>
     <div class="toolbar-right">
       <input id="searchInput" type="search" placeholder="Rezept suchen..." class="medium" />
@@ -1260,13 +1279,6 @@
   <section class="grid">
     <aside class="panel no-print" id="recipeListPanel">
       <h2>📖 Rezepte</h2>
-      <div class="filter-chips" id="filterChips">
-        <button class="chip active" data-filter="all">Alle</button>
-        <button class="chip" data-filter="favorites">Favoriten</button>
-        <button class="chip" data-filter="leicht">Leicht</button>
-        <button class="chip" data-filter="mittel">Mittel</button>
-        <button class="chip" data-filter="schwer">Schwer</button>
-      </div>
       <!-- Ordnerliste -->
       <div id="folderList" class="folder-list"></div>
       <!-- Rezeptliste -->
