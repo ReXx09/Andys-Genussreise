@@ -1614,6 +1614,7 @@
     els.mobileCookModeBtn = document.getElementById("mobileCookModeBtn");
 
     els.mobileNewRecipeBtn?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       createRecipe(state.selectedFolderId);
       showToast("Neues Rezept angelegt.");
     });
@@ -2506,7 +2507,10 @@
           <button id="editorEmptyNewBtn">➕ Rezept anlegen</button>
         </div>
       `;
-      document.getElementById("editorEmptyNewBtn")?.addEventListener("click", () => createRecipe(state.selectedFolderId));
+      document.getElementById("editorEmptyNewBtn")?.addEventListener("click", () => {
+        if (!ensureEditAccess()) return;
+        createRecipe(state.selectedFolderId);
+      });
       return;
     }
 
@@ -2875,10 +2879,12 @@
 
     document.getElementById("cookModeBtn")?.addEventListener("click", openCookMode);
     document.getElementById("duplicateBtn")?.addEventListener("click", () => {
+      if (!ensureEditAccess()) return;
       duplicateRecipe(recipe);
       showToast("Rezept dupliziert.");
     });
     document.getElementById("deleteBtn")?.addEventListener("click", async () => {
+      if (!ensureEditAccess()) return;
       const ok = await confirmAction(`Rezept "${recipe.name}" wirklich löschen?`);
       if (!ok) return;
       deleteRecipe(recipe);
