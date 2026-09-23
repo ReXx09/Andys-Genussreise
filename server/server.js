@@ -344,6 +344,9 @@ app.get('/api/nutrients/online-search', requireAuth, async (req, res) => {
       }
       throw lastError || new Error('Open Food Facts ist nicht erreichbar.');
     }
+    const queryTerms = barcode
+      ? []
+      : query.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).filter(Boolean);
     const products = (barcode ? [payload.status === 1 ? payload.product : null] : (Array.isArray(payload.products) ? payload.products : []))
       .filter(Boolean)
       .map((product) => {
@@ -358,6 +361,13 @@ app.get('/api/nutrients/online-search', requireAuth, async (req, res) => {
           fat: Number(nutriments.fat_100g) || 0
         };
       })
+        .filter((product) => barcode || queryTerms.every((term) => {
+          const searchableText = `${product.name} ${product.brand}`
+            .toLocaleLowerCase('de-DE')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          return searchableText.includes(term);
+        }))
       .filter((product) => product.name)
       .filter((product, index, all) => all.findIndex((item) => item.name.toLowerCase() === product.name.toLowerCase() && item.brand === product.brand) === index);
     res.json({ query: barcode || query, products });
