@@ -2832,6 +2832,10 @@
           <input data-field="tags" value="${escapeAttr(recipe.tags)}" placeholder="vegetarisch, schnell, meal prep" />
         </label>
 
+        <label>Externer Rezept-Link
+          <input data-field="sourceUrl" type="url" value="${escapeAttr(recipe.sourceUrl)}" placeholder="https://beispiel.de/rezept" />
+        </label>
+
         <label>Ordner
           <select data-field="folderId">
             ${folderOptions}

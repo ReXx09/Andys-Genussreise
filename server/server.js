@@ -42,6 +42,7 @@ db.exec(`
     cookingTime TEXT DEFAULT '',
     difficulty TEXT DEFAULT 'mittel',
     tags TEXT DEFAULT '',
+    source_url TEXT DEFAULT '',
     folder_id TEXT DEFAULT NULL,
     ingredients_json TEXT NOT NULL DEFAULT '[]',
     steps_json TEXT NOT NULL DEFAULT '[]',
@@ -49,6 +50,11 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+const recipeTableColumns = db.prepare("PRAGMA table_info(recipes)").all();
+if (!recipeTableColumns.some((column) => column.name === 'source_url')) {
+  db.exec("ALTER TABLE recipes ADD COLUMN source_url TEXT DEFAULT ''");
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS nutrient_entries (
@@ -159,10 +165,10 @@ function recipeInsertStatement() {
   return db.prepare(`
     INSERT INTO recipes (
       id, name, category, portions, prepTime, cookingTime, difficulty, tags,
-      folder_id, ingredients_json, steps_json, created_at, updated_at
+      source_url, folder_id, ingredients_json, steps_json, created_at, updated_at
     ) VALUES (
       @id, @name, @category, @portions, @prepTime, @cookingTime, @difficulty, @tags,
-      @folder_id, @ingredients, @steps, @created_at, @updated_at
+      @source_url, @folder_id, @ingredients, @steps, @created_at, @updated_at
     )
   `);
 }
@@ -177,12 +183,24 @@ function recipeDbParams(recipe, now) {
     cookingTime: recipe.cookingTime,
     difficulty: recipe.difficulty,
     tags: recipe.tags,
+    source_url: recipe.sourceUrl,
     folder_id: recipe.folderId,
     ingredients: JSON.stringify(recipe.ingredients),
     steps: JSON.stringify(recipe.steps),
     created_at: now,
     updated_at: now
   };
+}
+
+function normalizeSourceUrl(value) {
+  const raw = clampString(value || '', 2000).trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function serializeRecipe(row) {
@@ -195,6 +213,7 @@ function serializeRecipe(row) {
     cookingTime: row.cookingTime,
     difficulty: row.difficulty,
     tags: row.tags,
+    sourceUrl: row.source_url || '',
     folderId: row.folder_id,
     ingredients: JSON.parse(row.ingredients_json || '[]'),
     steps: JSON.parse(row.steps_json || '[]'),
@@ -215,6 +234,7 @@ function normalizeRecipe(input) {
     cookingTime: clampString(input.cookingTime || '', 100),
     difficulty: clampString(input.difficulty || 'mittel', 20),
     tags: clampString(input.tags || '', 300),
+    sourceUrl: normalizeSourceUrl(input.sourceUrl),
     folderId: input.folderId ? clampString(input.folderId, 80) : null,
     ingredients: ingredients.map(normalizeIngredient),
     steps: steps.map((step) => clampString(step, 2000))
@@ -459,6 +479,7 @@ app.put('/api/recipes/:id', requireAuth, (req, res) => {
       cookingTime = @cookingTime,
       difficulty = @difficulty,
       tags = @tags,
+      source_url = @source_url,
       folder_id = @folder_id,
       ingredients_json = @ingredients,
       steps_json = @steps,
@@ -475,6 +496,7 @@ app.put('/api/recipes/:id', requireAuth, (req, res) => {
     cookingTime: recipe.cookingTime,
     difficulty: recipe.difficulty,
     tags: recipe.tags,
+    source_url: recipe.sourceUrl,
     folder_id: recipe.folderId,
     ingredients: JSON.stringify(recipe.ingredients),
     steps: JSON.stringify(recipe.steps),
