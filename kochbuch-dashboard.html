@@ -262,8 +262,9 @@
       padding: 0 16px 78px;
       display: grid;
       gap: 12px;
-        height: calc(100vh - 172px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
-      grid-template-rows: auto 1fr auto;
+      position: relative;
+      height: calc(100vh - 130px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
+      grid-template-rows: auto 1fr;
       overflow: hidden;
     }
 
@@ -1159,10 +1160,10 @@
 
     .mobile-actions {
       display: grid;
-      position: fixed;
-      left: max(16px, env(safe-area-inset-left));
-      right: max(16px, env(safe-area-inset-right));
-      bottom: max(10px, env(safe-area-inset-bottom));
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 0;
       z-index: 1200;
       margin: 0;
       padding: 8px;
@@ -1247,8 +1248,8 @@
         border-left: 0;
       }
       main {
-          height: calc(100vh - 154px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
-        grid-template-rows: auto 1fr auto;
+        height: calc(100vh - 120px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
+        grid-template-rows: auto 1fr;
       }
       .workspace-scroll-card {
         overflow: auto;
