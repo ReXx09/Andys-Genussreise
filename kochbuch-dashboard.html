@@ -836,6 +836,12 @@
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
     }
+    .source-link-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .source-link-controls input { flex: 1; min-width: 0; }
     label {
       display: grid;
       gap: 5px;
@@ -2281,6 +2287,15 @@
   }
   function escapeAttr(value) { return escapeHtml(value); }
 
+  function isSafeExternalUrl(value) {
+    try {
+      const url = new URL(String(value || '').trim());
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
   function formatNumber(value) {
     return Number(value || 0).toLocaleString("de-DE", { maximumFractionDigits: 1 });
   }
@@ -2833,7 +2848,10 @@
         </label>
 
         <label>Externer Rezept-Link
-          <input data-field="sourceUrl" type="url" value="${escapeAttr(recipe.sourceUrl)}" placeholder="https://beispiel.de/rezept" />
+          <div class="source-link-controls">
+            <input data-field="sourceUrl" type="url" value="${escapeAttr(recipe.sourceUrl)}" placeholder="https://beispiel.de/rezept" />
+            <button type="button" class="secondary small" data-open-source ${isSafeExternalUrl(recipe.sourceUrl) ? '' : 'disabled'}>🔗 Öffnen</button>
+          </div>
         </label>
 
         <label>Ordner
@@ -3055,6 +3073,19 @@
         if (["portions","difficulty","prepTime","cookingTime"].includes(field)) updatePrintArea(recipe);
       });
     });
+
+    const sourceInput = els.editor.querySelector('[data-field="sourceUrl"]');
+    const openSourceButton = els.editor.querySelector('[data-open-source]');
+    if (sourceInput && openSourceButton) {
+      sourceInput.addEventListener("input", () => {
+        openSourceButton.disabled = !isSafeExternalUrl(sourceInput.value);
+      });
+      openSourceButton.addEventListener("click", () => {
+        if (isSafeExternalUrl(sourceInput.value)) {
+          window.open(sourceInput.value.trim(), "_blank", "noopener,noreferrer");
+        }
+      });
+    }
 
     // Zutaten-Felder (haben data-ingredient)
     els.editor.querySelectorAll('[data-ingredient]').forEach(input => {
