@@ -2937,6 +2937,11 @@
       onlineNutrientProducts = payload.products || [];
       renderOnlineNutrientProducts();
     } catch (error) {
+      if (error.status === 401) {
+        closeOnlineNutrientModal();
+        handleUnauthorized("Deine Sitzung ist abgelaufen. Bitte erneut einloggen.");
+        return;
+      }
       els.onlineNutrientResults.innerHTML = "";
       els.onlineNutrientFeedback.textContent = `⚠️ ${error.message || "Online-Suche fehlgeschlagen."}`;
     }
@@ -2975,6 +2980,11 @@
       els.onlineNutrientQuery.textContent = `Barcode: ${barcode}`;
       renderOnlineNutrientProducts();
     } catch (error) {
+      if (error.status === 401) {
+        closeOnlineNutrientModal();
+        handleUnauthorized("Deine Sitzung ist abgelaufen. Bitte erneut einloggen.");
+        return;
+      }
       els.onlineNutrientResults.innerHTML = "";
       els.onlineNutrientFeedback.textContent = `⚠️ ${error.message || "Barcode-Suche fehlgeschlagen."}`;
     }
