@@ -19,6 +19,29 @@ describe('Rezeptimport-Katalog', () => {
     assert.deepEqual(parseIngredientText('Salz nach Geschmack'), { name: 'Salz nach Geschmack', amount: 1, unit: '' });
   });
 
+  it('übernimmt Zutaten und Schritte aus dem HTML bei unvollständigem JSON-LD', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'Recipe', name: 'Kekse &#8211; &amp; mehr'
+    })}</script>
+      <h2>Rezept Grundteig (ergibt ca. 12 Stück)</h2>
+      <ul><li>ca. 200 g Mehl</li><li>2 Eier</li></ul>
+      <h2>Schritt 1</h2><p>Butter cremig rühren.</p>
+      <h2>Schritt 2</h2><p>Für etwa 14–15 Minuten backen.</p>`;
+    const recipe = parseRecipePage(html);
+    assert.equal(recipe.name, 'Kekse – & mehr');
+    assert.equal(recipe.portions, 12);
+    assert.deepEqual(recipe.ingredients.map(({ name, amount, unit }) => ({ name, amount, unit })), [
+      { name: 'Mehl', amount: 200, unit: 'g' },
+      { name: 'Eier', amount: 2, unit: '' }
+    ]);
+    assert.deepEqual(recipe.steps, ['Butter cremig rühren.', 'Für etwa 14–15 Minuten backen.']);
+    assert.equal(recipe.cookingTime, '14–15 Min.');
+    assert.equal(recipe.sourceFields.ingredients, true);
+    assert.equal(recipe.sourceFields.steps, true);
+    assert.equal(recipe.sourceFields.portions, true);
+    assert.equal(recipe.sourceFields.cookingTime, true);
+  });
+
   it('verarbeitet klassische JSON-LD-Rezepte mit fehlenden optionalen Feldern', () => {
     const html = `<script type="application/ld+json">${JSON.stringify({
       '@type': 'Recipe', name: 'Suppe', recipeIngredient: '1 Dose Tomaten', recipeInstructions: 'Alles kochen'
