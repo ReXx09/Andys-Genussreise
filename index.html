@@ -1216,6 +1216,13 @@
         position: fixed;
         bottom: calc(10px + env(safe-area-inset-bottom));
       }
+      button,
+      .button-link,
+      .nav-bar a,
+      input:not([type="checkbox"]):not([type="radio"]),
+      select {
+        min-height: 44px;
+      }
     }
 
     .cook-hero {
@@ -1244,6 +1251,12 @@
     }
 
     @media (max-width: 880px) {
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        height: 100dvh;
+      }
       header {
         padding: 12px 14px 6px;
       }
@@ -1254,13 +1267,29 @@
         font-size: 0.85rem;
       }
       .nav-bar {
-        padding: 0 12px;
-        min-height: 36px;
+        flex-wrap: nowrap;
+        gap: 4px 10px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        padding: 4px 12px;
+        min-height: 44px;
       }
       .nav-bar a,
       .nav-bar button {
-        padding: 8px 4px 7px;
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding: 8px;
         font-size: 0.8rem;
+        min-height: 44px;
+      }
+      .nav-bar .spacer {
+        flex: 0 0 0;
+      }
+      .nav-bar #authState {
+        flex: 0 0 auto;
+        white-space: nowrap;
       }
       .recipe-toolbar-filters {
         flex-basis: 100%;
@@ -1269,7 +1298,10 @@
         border-left: 0;
       }
       main {
-        height: calc(100vh - 120px - var(--desktop-taskbar-offset) - var(--shell-bottom-safe-gap));
+        flex: 1;
+        height: auto;
+        min-height: 0;
+        padding-bottom: calc(140px + env(safe-area-inset-bottom));
         grid-template-rows: auto 1fr;
       }
       .workspace-scroll-card {
