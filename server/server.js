@@ -8,6 +8,7 @@ import fs from 'fs';
 import { clampString, normalizeIngredient, parseIngredientText, parseRecipePage } from './import-parser.js';
 import { validateImportUrl } from './import-security.js';
 import { fetchImportResponse, isRedirectStatus, readLimitedResponse } from './import-http.js';
+import { normalizeOnlineNutrientProducts, simplifyNutrientSearchQuery } from './online-nutrient-search.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -337,68 +338,47 @@ app.post('/api/recipes/import-preview', requireAuth, async (req, res) => {
 
 app.get('/api/nutrients/online-search', requireAuth, async (req, res) => {
   const query = String(req.query?.q || '').trim().slice(0, 100);
+  const searchQuery = simplifyNutrientSearchQuery(query);
   const barcode = String(req.query?.barcode || '').trim();
   if (barcode && !/^\d{8,14}$/.test(barcode)) {
     return res.status(400).json({ error: 'Bitte einen gültigen 8- bis 14-stelligen Barcode eingeben.' });
   }
-  if (!barcode && query.length < 2) {
+  if (!barcode && searchQuery.length < 2) {
     return res.status(400).json({ error: 'Bitte mindestens zwei Zeichen für die Suche eingeben.' });
   }
 
-  const searchPath = barcode
-    ? `/api/v2/product/${barcode}.json?fields=code,product_name,product_name_de,generic_name,brands,nutriments`
-    : `/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_de,generic_name,brands,nutriments`;
+  const fields = 'code,product_name,product_name_de,generic_name,brands,nutriments';
+  const url = barcode
+    ? new URL(`https://world.openfoodfacts.org/api/v3.6/product/${barcode}.json`)
+    : new URL('https://search.openfoodfacts.org/search');
+  if (barcode) {
+    url.searchParams.set('fields', fields);
+  } else {
+    url.searchParams.set('q', searchQuery);
+    url.searchParams.set('langs', 'de,en');
+    url.searchParams.set('page_size', '8');
+    url.searchParams.set('fields', fields);
+  }
+
   try {
-    let response;
-    let payload;
-    let lastError;
-    for (const host of ['world.openfoodfacts.org', 'de.openfoodfacts.org']) {
-      try {
-        response = await fetch(`https://${host}${searchPath}`, {
-          signal: AbortSignal.timeout(8000),
-          headers: { 'User-Agent': 'AndysKochbuch/1.0 (personal recipe manager)' }
-        });
-        if (response.ok) {
-          payload = await response.json();
-          break;
-        }
-        lastError = new Error(`Open Food Facts antwortet mit HTTP ${response.status}.`);
-      } catch (error) {
-        lastError = error;
-      }
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'AndysKochbuch/1.0 (+https://github.com/ReXx09/Andys-Genussreise)' }
+    });
+    if (barcode && response.status === 404) {
+      return res.json({ query: barcode, products: [] });
     }
-    if (!payload) {
-      if (barcode && response?.status === 404) {
-        return res.json({ query: barcode, products: [] });
-      }
-      throw lastError || new Error('Open Food Facts ist nicht erreichbar.');
+    if (!response.ok) {
+      const message = response.status === 503
+        ? 'Open Food Facts ist momentan nicht erreichbar oder begrenzt die Anfragen (HTTP 503).'
+        : `Open Food Facts antwortet mit HTTP ${response.status}.`;
+      return res.status(502).json({ error: message });
     }
-    const queryTerms = barcode
-      ? []
-      : query.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).filter(Boolean);
-    const products = (barcode ? [payload.status === 1 ? payload.product : null] : (Array.isArray(payload.products) ? payload.products : []))
-      .filter(Boolean)
-      .map((product) => {
-        const nutriments = product.nutriments || {};
-        return {
-          id: String(product.code || ''),
-          name: String(product.product_name_de || product.product_name || product.generic_name || '').trim(),
-          brand: String(product.brands || '').trim(),
-          kcal: Number(nutriments['energy-kcal_100g']) || 0,
-          protein: Number(nutriments.proteins_100g) || 0,
-          carbs: Number(nutriments.carbohydrates_100g) || 0,
-          fat: Number(nutriments.fat_100g) || 0
-        };
-      })
-        .filter((product) => barcode || queryTerms.every((term) => {
-          const searchableText = `${product.name} ${product.brand}`
-            .toLocaleLowerCase('de-DE')
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-          return searchableText.includes(term);
-        }))
-      .filter((product) => product.name)
-      .filter((product, index, all) => all.findIndex((item) => item.name.toLowerCase() === product.name.toLowerCase() && item.brand === product.brand) === index);
+    const payload = await response.json();
+    const sourceProducts = barcode
+      ? (payload.status === 'success' && payload.product ? [payload.product] : [])
+      : (Array.isArray(payload.hits) ? payload.hits : []);
+    const products = normalizeOnlineNutrientProducts(sourceProducts);
     res.json({ query: barcode || query, products });
   } catch (error) {
     const message = error?.name === 'TimeoutError' ? 'Die Online-Nährwertsuche hat zu lange gedauert.' : 'Die Online-Nährwertdatenbank konnte nicht abgefragt werden.';
