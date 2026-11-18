@@ -98,6 +98,8 @@
       border-bottom-color: var(--primary);
     }
     .nav-bar .spacer { flex: 1; }
+    .nav-actions { display: contents; }
+    #mobileNavToggle { display: none; }
     .nav-bar .badge {
       background: var(--primary);
       color: white;
@@ -1267,12 +1269,9 @@
         font-size: 0.85rem;
       }
       .nav-bar {
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         gap: 4px 10px;
-        overflow-x: auto;
-        overscroll-behavior-x: contain;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
+        overflow: visible;
         padding: 4px 12px;
         min-height: 44px;
       }
@@ -1285,11 +1284,23 @@
         min-height: 44px;
       }
       .nav-bar .spacer {
-        flex: 0 0 0;
+        display: none;
       }
-      .nav-bar #authState {
-        flex: 0 0 auto;
-        white-space: nowrap;
+      #mobileNavToggle {
+        display: inline-flex;
+        margin-left: auto;
+      }
+      .nav-bar .nav-actions {
+        display: none;
+        flex: 1 0 100%;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 10px;
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+      }
+      .nav-bar.expanded .nav-actions {
+        display: flex;
       }
       .recipe-toolbar-filters {
         flex-basis: 100%;
@@ -1352,13 +1363,16 @@
   <a href="#" class="active" data-view="recipes">📖 Rezepte</a>
   <a href="#" data-view="nutrients">📊 Nährwerte verwalten</a>
   <span class="spacer"></span>
-  <span id="authState" class="muted">🔓 Nur Lesen</span>
-  <button id="themeToggleBtn" class="ghost" aria-label="Darkmode umschalten">🌙 Darkmode</button>
-  <button id="openLoginBtn" class="ghost">🔐 Login</button>
-  <button id="logoutBtn" class="ghost hidden">🚪 Logout</button>
-  <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
-  <button id="openUrlImportBtn" class="ghost">🌐 URL-Import</button>
-  <button id="printNavBtn" class="ghost">🖨️ Drucken</button>
+  <button id="mobileNavToggle" class="ghost" type="button" aria-expanded="false" aria-controls="navActions" aria-label="Weitere Aktionen">☰ Mehr</button>
+  <div class="nav-actions" id="navActions">
+    <span id="authState" class="muted">🔓 Nur Lesen</span>
+    <button id="themeToggleBtn" class="ghost" aria-label="Darkmode umschalten">🌙 Darkmode</button>
+    <button id="openLoginBtn" class="ghost">🔐 Login</button>
+    <button id="logoutBtn" class="ghost hidden">🚪 Logout</button>
+    <button id="refreshBtn" class="ghost">🔄 Aktualisieren <span class="refresh-feedback" id="refreshFeedback">✅ Geladen</span></button>
+    <button id="openUrlImportBtn" class="ghost">🌐 URL-Import</button>
+    <button id="printNavBtn" class="ghost">🖨️ Drucken</button>
+  </div>
 </nav>
 
 <main>
@@ -1801,6 +1815,9 @@
   };
 
   const els = {
+    navBar: document.querySelector(".nav-bar"),
+    navActions: document.getElementById("navActions"),
+    mobileNavToggle: document.getElementById("mobileNavToggle"),
     newRecipeBtn: document.getElementById("newRecipeBtn"),
     newFolderBtn: document.getElementById("newFolderBtn"),
     searchInput: document.getElementById("searchInput"),
@@ -4406,7 +4423,13 @@
   // ============================================================
   //  13. NAVIGATION / VIEWS
   // ============================================================
+  function closeMobileNav() {
+    els.navBar?.classList.remove("expanded");
+    els.mobileNavToggle?.setAttribute("aria-expanded", "false");
+  }
+
   function switchView(view) {
+    closeMobileNav();
     state.view = view;
     els.navLinks.forEach(link => {
       link.classList.toggle("active", link.dataset.view === view);
@@ -4437,6 +4460,27 @@
   }
 
   // Navigation
+  els.mobileNavToggle?.addEventListener("click", () => {
+    const expanded = els.navBar.classList.toggle("expanded");
+    els.mobileNavToggle.setAttribute("aria-expanded", String(expanded));
+  });
+  els.navActions?.addEventListener("click", (event) => {
+    if (event.target.closest("button")) closeMobileNav();
+  });
+  document.addEventListener("click", (event) => {
+    if (els.navBar?.classList.contains("expanded") && !els.navBar.contains(event.target)) {
+      closeMobileNav();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.navBar?.classList.contains("expanded")) {
+      closeMobileNav();
+      els.mobileNavToggle.focus();
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 880) closeMobileNav();
+  });
   els.navLinks.forEach(link => {
     link.addEventListener("click", (e) => {
       e.preventDefault();
